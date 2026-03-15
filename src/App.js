@@ -57,6 +57,7 @@ const App = () => {
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
+  // --- THE DIRECT CONNECTION FIX ---
   const handleFrankResponse = async (text) => {
     if (!text.trim()) return;
     const currentMsgs = [...messages, { role: 'user', content: text }];
@@ -65,21 +66,16 @@ const App = () => {
     setIsProcessing(true);
 
     try {
-      // Switched to stable v1 endpoint for better Render compatibility
-      const url = `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${apiKey}`;
-      const response = await fetch(url, {
+      // Reverted to the direct v1 URL which is the only one Render allows reliably
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: text }] }] })
       });
 
       const data = await response.json();
-      if (data.candidates && data.candidates[0].content) {
-        const frankSays = data.candidates[0].content.parts[0].text;
-        setMessages([...currentMsgs, { role: 'assistant', content: frankSays }]);
-      } else {
-        throw new Error("Handshake Failed");
-      }
+      const frankSays = data.candidates[0].content.parts[0].text;
+      setMessages([...currentMsgs, { role: 'assistant', content: frankSays }]);
     } catch (e) {
       setMessages([...currentMsgs, { role: 'assistant', content: "Handshake Failed. Usually this means the API Key in Render environment is incorrect or missing." }]);
     } finally {
@@ -116,7 +112,7 @@ const App = () => {
     try {
       const text = file.type === 'application/pdf' ? await extractTextFromPDF(file) : await file.text();
       setLastScriptContent(text);
-      handleFrankResponse(`[Script Uploaded] Analyze this: ${text.slice(0, 5000)}`);
+      handleFrankResponse(`[Script Upload] Analyze this: ${text.slice(0, 5000)}`);
     } catch (e) { console.error(e); } finally { setIsProcessing(false); }
   };
 
@@ -162,18 +158,18 @@ const App = () => {
             <div className="bg-white border-t p-5 shrink-0 shadow-lg">
               <div className="flex items-center gap-4 max-w-5xl mx-auto w-full">
                 <input value={inputText} onChange={e => setInputText(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleFrankResponse(inputText)} placeholder="Defend your arc..." className="flex-1 px-6 py-4 bg-stone-50 rounded-xl outline-none" />
-                <button onClick={() => handleFrankResponse(inputText)} className="w-12 h-12 bg-stone-800 text-white rounded-full flex items-center justify-center shadow-md hover:bg-black transition-colors"><Send size={18} /></button>
-                <button onClick={toggleDictation} className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-red-600 text-white animate-pulse' : 'bg-stone-50 text-stone-400'}`}><Mic size={20}/></button>
-                <label className="w-12 h-12 bg-stone-50 rounded-full flex items-center justify-center cursor-pointer hover:bg-stone-200 transition-colors"><FileUp size={20}/><input type="file" className="hidden" accept=".pdf" onChange={(e) => handleScriptUpload(e.target.files[0])}/></label>
+                <button onClick={() => handleFrankResponse(inputText)} className="w-12 h-12 bg-stone-800 text-white rounded-full flex items-center justify-center shadow-md"><Send size={18} /></button>
+                <button onClick={toggleDictation} className={`w-12 h-12 rounded-full flex items-center justify-center ${isRecording ? 'bg-red-600 text-white animate-pulse' : 'bg-stone-50 text-stone-400'}`}><Mic size={20}/></button>
+                <label className="w-12 h-12 bg-stone-50 rounded-full flex items-center justify-center cursor-pointer hover:bg-stone-100 transition-colors"><FileUp size={20}/><input type="file" className="hidden" accept=".pdf" onChange={(e) => handleScriptUpload(e.target.files[0])}/></label>
               </div>
             </div>
           </>
         ) : (
           <div className="flex-1 flex flex-col bg-white">
             <div className="bg-stone-900 text-white p-3 flex items-center justify-between px-8">
-               <label className="flex items-center gap-2 px-5 py-2 bg-stone-800 rounded-full cursor-pointer text-[10px] font-bold uppercase tracking-widest hover:bg-stone-700 transition-colors"><FileUp size={14}/> Upload PDF<input type="file" className="hidden" accept=".pdf" onChange={(e) => handleScriptUpload(e.target.files[0])}/></label>
+               <label className="flex items-center gap-2 px-5 py-2 bg-stone-800 rounded-full cursor-pointer text-[10px] font-bold uppercase tracking-widest"><FileUp size={14}/> Upload PDF<input type="file" className="hidden" accept=".pdf" onChange={(e) => handleScriptUpload(e.target.files[0])}/></label>
                <div className="flex items-center gap-3">
-                  <button className="px-8 py-2 bg-white text-black rounded-full font-black uppercase text-xs tracking-widest hover:bg-stone-200 transition-colors">PLAY READ-THROUGH</button>
+                  <button className="px-8 py-2 bg-white text-black rounded-full font-black uppercase text-xs tracking-widest">PLAY READ-THROUGH</button>
                   <button onClick={() => setReadState('stopped')} className="p-2 bg-stone-800 rounded-full text-red-400 shadow-sm"><StopCircle size={16} /></button>
                </div>
             </div>
@@ -184,7 +180,7 @@ const App = () => {
                      {['Narrator', ...cast].map(char => (
                         <div key={char} className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm">
                            <div className="font-bold text-xs uppercase tracking-widest mb-3">{char}</div>
-                           <select className="w-full bg-stone-50 border rounded-lg p-2.5 text-xs outline-none">
+                           <select value={voiceAssignments[char] || ''} onChange={e => setVoiceAssignments(v => ({...v, [char]: e.target.value}))} className="w-full bg-stone-50 border rounded-lg p-2.5 text-xs outline-none">
                               <option value="">Jimmy (Default)</option>
                               {INWORLD_VOICES.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                            </select>
@@ -192,7 +188,7 @@ const App = () => {
                      ))}
                   </div>
                </div>
-               <div className="w-1/2 p-20 font-serif text-xl text-stone-300">Upload a script to begin table read.</div>
+               <div className="w-1/2 p-20 font-serif text-xl text-stone-300">Upload a script to begin.</div>
             </div>
           </div>
         )}
