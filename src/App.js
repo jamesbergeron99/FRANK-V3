@@ -1,6 +1,37 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Send, Mic, MicOff, Pause, Play, RotateCcw, Loader2, AlertCircle, FileUp, ClipboardList, MessageSquare, Trash2, CheckCircle2, Zap, ZapOff, BookOpen, Download, Volume2, Image as ImageIcon, Sparkles, Stethoscope, ChevronRight, Activity, Scissors, XCircle, Zap as ZapIcon, Users, SkipBack, SkipForward, StopCircle, PlayCircle, Volume1 
+  Send, 
+  Mic, 
+  MicOff, 
+  Pause, 
+  Play, 
+  RotateCcw, 
+  Loader2, 
+  AlertCircle, 
+  FileUp, 
+  ClipboardList, 
+  MessageSquare, 
+  Trash2, 
+  CheckCircle2, 
+  Zap, 
+  ZapOff, 
+  BookOpen, 
+  Download, 
+  Volume2, 
+  Image as ImageIcon, 
+  Sparkles, 
+  Stethoscope, 
+  ChevronRight, 
+  Activity, 
+  Scissors, 
+  XCircle, 
+  Zap as ZapIcon, 
+  Users, 
+  SkipBack, 
+  SkipForward, 
+  StopCircle, 
+  PlayCircle, 
+  Volume1 
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
@@ -397,7 +428,6 @@ const App = () => {
   const fetchAudioChunk = async (text, customVoiceId = VOICE_ID) => {
     try {
       const authHeader = INWORLD_API_KEY.trim().startsWith('Basic ') ? INWORLD_API_KEY.trim() : `Basic ${INWORLD_API_KEY.trim()}`;
-      // Fixed the Inworld pipe here to ensure correct variable usage
       const response = await fetch('https://api.inworld.ai/tts/v1/voice', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': authHeader }, body: JSON.stringify({ text, voiceId: customVoiceId, modelId: MODEL_ID }) });
       if (response.ok) {
          const json = await response.json(); let base64 = json.audioContent || json.result?.audioContent || json.data;
@@ -461,7 +491,6 @@ const App = () => {
     isCurrentlyPlaying.current = false; setIsSpeaking(false); setIsPaused(false);
   };
 
-  // Fixed the Response logic here to ensure Frank speaks up
   const handleFrankResponse = async (textToProcess, isDeepDive = false) => {
     if (!textToProcess && !isDeepDive) return;
     stopSpeech(); setIsProcessing(true); if (isDeepDive) { setIsDeepDiving(true); setActiveTab('deep-dive'); }
@@ -469,12 +498,9 @@ const App = () => {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
       const systemPrompt = "You are Frank, Sunset Blvd executive. 1st person. Detailed pass for scripts. Brief punchy for chat.";
-      // Ensuring the request body is perfectly formed for Render/Gemini handshake
-      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [...messages.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })), { role: 'user', parts: [{ text: textToProcess || "Surgery start" }] }], systemInstruction: { parts: [{ text: systemPrompt }] } }) });
+      const res = await fetchWithRetry(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [...messages.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })), { role: 'user', parts: [{ text: textToProcess || "Surgery start" }] }], systemInstruction: { parts: [{ text: systemPrompt }] } }) });
       const data = await res.json(); const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!responseText) {
-          throw new Error("No response from Frank.");
-      }
+      if (!responseText) return;
       const isScript = textToProcess?.includes("SCRIPT CONTENT:") || isDeepDive;
       const newMessages = [...messages, { role: 'user', content: isDeepDive ? "[Surgery]" : (isScript ? "[New Script]" : textToProcess) }, { role: 'assistant', content: responseText }];
       if (isScript) {
@@ -483,17 +509,14 @@ const App = () => {
         setSeriesBible(prev => prev + `\n- ${grade}: ${responseText.slice(0, 100)}`);
       }
       setMessages(newMessages); await saveToCloud(newMessages); queueSpeech(responseText);
-    } catch (e) { 
-      console.error("Frank Handshake Error:", e);
-      setErrorMessage("Frank is silent. Check your API Keys in Render."); 
-    } finally { setIsProcessing(false); setIsDeepDiving(false); }
+    } catch (e) { setErrorMessage("Error processing..."); } finally { setIsProcessing(false); setIsDeepDiving(false); }
   };
 
   return (
     <div className="flex flex-col h-screen bg-[#faf9f6] text-[#2c2c2c] overflow-hidden text-sm">
       <header className="flex items-center justify-between px-8 py-5 bg-white border-b shadow-sm shrink-0">
         <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-black rounded flex items-center justify-center text-white font-bold italic shadow-lg">F</div>
+          <div className="w-10 h-10 bg-black rounded flex items-center justify-center text-white font-bold italic">F</div>
           <div><h1 className="text-xl font-black uppercase tracking-tighter">Frank</h1><p className="text-[8px] uppercase tracking-[0.3em] font-bold text-stone-400">Executive Series Office</p></div>
         </div>
         <div className="flex items-center gap-6 text-[10px] font-bold uppercase">
@@ -511,7 +534,7 @@ const App = () => {
           <div className="flex-1 overflow-y-auto p-10 space-y-10">
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[75%] p-6 rounded-2xl ${m.role === 'user' ? 'bg-stone-800 text-white shadow-xl' : 'bg-white border shadow-sm'}`}>{m.content}</div>
+                <div className={`max-w-[75%] p-6 rounded-2xl ${m.role === 'user' ? 'bg-stone-800 text-white' : 'bg-white border shadow-sm'}`}>{m.content}</div>
               </div>
             ))}
             {isProcessing && <div className="p-5 italic text-stone-400 flex items-center gap-3"><Loader2 className="animate-spin" size={16} /><span>Frank is considering...</span></div>}
@@ -520,22 +543,22 @@ const App = () => {
         ) : activeTab === 'read-through' ? (
           <div className="flex-1 flex flex-col overflow-hidden bg-white">
             <div className="bg-stone-900 text-white p-3 flex items-center justify-between px-8">
-               <label className="px-5 py-2 bg-stone-800 rounded-full cursor-pointer text-[10px] font-bold uppercase tracking-widest"><FileUp size={14} className="inline mr-2"/>Upload PDF<input type="file" className="hidden" accept=".pdf" onChange={(e) => handleScriptUpload(e.target.files[0], true)} /></label>
+               <label className="px-5 py-2 bg-stone-800 rounded-full cursor-pointer text-[10px] font-bold uppercase"><FileUp size={14} className="inline mr-2"/>Upload<input type="file" className="hidden" accept=".pdf" onChange={(e) => handleScriptUpload(e.target.files[0], true)} /></label>
                <div className="flex items-center gap-3">
                   <button onClick={() => skipScene(-1)}><SkipBack size={16} /></button>
-                  <button onClick={toggleReadPlayback} className="px-8 py-2 bg-white text-black rounded-full font-black uppercase text-xs tracking-widest transition-all hover:bg-stone-200">{readState === 'playing' ? 'PAUSE' : 'PLAY'}</button>
-                  <button onClick={stopReadPlayback} className="p-2 bg-stone-800 rounded-full text-red-400 hover:bg-stone-700 transition-all"><StopCircle size={16} /></button>
+                  <button onClick={toggleReadPlayback} className="px-8 py-2 bg-white text-black rounded-full font-black uppercase text-xs">{readState === 'playing' ? 'PAUSE' : 'PLAY'}</button>
+                  <button onClick={stopReadPlayback}><StopCircle size={16} /></button>
                   <button onClick={() => skipScene(1)}><SkipForward size={16} /></button>
                </div>
             </div>
             <div className="flex-1 flex overflow-hidden">
-               <div className="w-1/3 bg-stone-50 border-r p-10 overflow-y-auto shadow-inner">
-                  <h2 className="text-xl font-black uppercase mb-8 flex items-center gap-3"><Users size={20}/> Voice Casting</h2>
+               <div className="w-1/3 bg-stone-50 border-r p-10 overflow-y-auto">
+                  <h2 className="text-xl font-black uppercase mb-8">Voice Casting</h2>
                   <div className="space-y-4">
                      {['Narrator', ...cast].map(char => (
-                        <div key={char} className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm transition-all hover:shadow-md">
-                           <div className="flex justify-between items-center mb-3"><span className="font-bold text-[10px] uppercase tracking-widest text-stone-500">{char}</span><button onClick={() => testVoice(char)} className="p-1.5 bg-stone-50 rounded-full text-stone-400 hover:text-stone-600"><Volume1 size={14}/></button></div>
-                           <select value={voiceAssignments[char] || ''} onChange={e => setVoiceAssignments(v => ({...v, [char]: e.target.value}))} className="w-full text-xs p-2.5 bg-stone-50 border-none rounded-lg outline-none cursor-pointer font-bold">
+                        <div key={char} className="bg-white p-4 rounded-xl border">
+                           <div className="flex justify-between mb-2"><span className="font-bold text-xs uppercase">{char}</span><button onClick={() => testVoice(char)}><Volume1/></button></div>
+                           <select value={voiceAssignments[char] || ''} onChange={e => setVoiceAssignments(v => ({...v, [char]: e.target.value}))} className="w-full text-xs p-2 border rounded">
                               <option value="">Jimmy (Default)</option>
                               {INWORLD_VOICES.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                            </select>
@@ -543,9 +566,9 @@ const App = () => {
                      ))}
                   </div>
                </div>
-               <div className="w-2/3 p-16 overflow-y-auto font-serif text-lg leading-relaxed bg-[#fdfcfb]">
+               <div className="w-2/3 p-16 overflow-y-auto font-serif text-lg leading-relaxed">
                   {parsedLines.map((line, idx) => (
-                    <div key={idx} ref={currentLineIndex === idx ? activeLineRef : null} className={`p-2.5 rounded-lg mb-2 transition-all duration-300 ${currentLineIndex === idx && readState === 'playing' ? 'bg-stone-900 text-white shadow-xl scale-[1.01]' : 'text-stone-700'}`} style={{ marginLeft: line.type === 'character' ? '20%' : (line.type === 'dialogue' ? '15%' : '0'), textAlign: line.type === 'transition' ? 'right' : 'left' }}>{line.text}</div>
+                    <div key={idx} ref={currentLineIndex === idx ? activeLineRef : null} className={`p-2 rounded mb-2 ${currentLineIndex === idx ? 'bg-stone-900 text-white' : ''}`} style={{ marginLeft: line.type === 'character' ? '20%' : (line.type === 'dialogue' ? '15%' : '0'), textAlign: line.type === 'transition' ? 'right' : 'left' }}>{line.text}</div>
                   ))}
                </div>
             </div>
@@ -553,12 +576,12 @@ const App = () => {
         ) : null}
 
         {activeTab === 'chat' && (
-          <div className="bg-white border-t p-5 shrink-0 shadow-2xl">
+          <div className="bg-white border-t p-5 shrink-0">
             <div className="flex items-center gap-4 max-w-5xl mx-auto w-full">
-              <input type="text" value={inputText} onChange={(e) => setInputText(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleFrankResponse(inputText)} placeholder="Defend your arc..." className="flex-1 px-6 py-4 bg-stone-50 rounded-2xl outline-none border border-transparent focus:border-stone-200 transition-all" />
-              <button onClick={() => handleFrankResponse(inputText)} className="bg-stone-800 text-white w-12 h-12 rounded-full flex items-center justify-center shadow-lg hover:bg-black transition-all"><Send size={18} /></button>
-              <button onClick={() => toggleDictation()} className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all ${isRecording ? 'bg-red-600 text-white animate-pulse' : 'bg-stone-50 text-stone-400 hover:text-stone-600'}`}><Mic size={20}/></button>
-              <label className="w-12 h-12 bg-stone-50 rounded-full flex items-center justify-center cursor-pointer shadow-lg hover:text-stone-600 transition-all"><FileUp size={20}/><input type="file" className="hidden" accept=".pdf" onChange={(e) => handleScriptUpload(e.target.files[0])}/></label>
+              <input type="text" value={inputText} onChange={(e) => setInputText(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleFrankResponse(inputText)} placeholder="Defend your arc..." className="flex-1 px-6 py-4 bg-stone-50 rounded-xl outline-none" />
+              <button onClick={() => handleFrankResponse(inputText)} className="bg-stone-800 text-white w-12 h-12 rounded-full flex items-center justify-center"><Send size={18} /></button>
+              <button onClick={() => toggleDictation()} className={`w-12 h-12 rounded-full flex items-center justify-center ${isRecording ? 'bg-red-600 text-white' : 'bg-stone-50'}`}><Mic size={20}/></button>
+              <label className="w-12 h-12 bg-stone-50 rounded-full flex items-center justify-center cursor-pointer"><FileUp size={20}/><input type="file" className="hidden" accept=".pdf" onChange={(e) => handleScriptUpload(e.target.files[0])}/></label>
             </div>
           </div>
         )}
