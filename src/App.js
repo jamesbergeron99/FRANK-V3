@@ -57,7 +57,6 @@ const App = () => {
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  // --- RAW DIRECT API CALL (NO WRAPPER) ---
   const handleFrankResponse = async (text) => {
     if (!text.trim()) return;
     const currentMsgs = [...messages, { role: 'user', content: text }];
@@ -66,12 +65,12 @@ const App = () => {
     setIsProcessing(true);
 
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`, {
+      // Switched to stable v1 endpoint for better Render compatibility
+      const url = `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${apiKey}`;
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: text }] }]
-        })
+        body: JSON.stringify({ contents: [{ parts: [{ text: text }] }] })
       });
 
       const data = await response.json();
@@ -79,10 +78,10 @@ const App = () => {
         const frankSays = data.candidates[0].content.parts[0].text;
         setMessages([...currentMsgs, { role: 'assistant', content: frankSays }]);
       } else {
-        throw new Error("Invalid Response");
+        throw new Error("Handshake Failed");
       }
     } catch (e) {
-      setMessages([...currentMsgs, { role: 'assistant', content: "Handshake failed. The key is correct, but Render is blocking the request. Checking security settings now..." }]);
+      setMessages([...currentMsgs, { role: 'assistant', content: "Handshake Failed. Usually this means the API Key in Render environment is incorrect or missing." }]);
     } finally {
       setIsProcessing(false);
     }
@@ -117,8 +116,7 @@ const App = () => {
     try {
       const text = file.type === 'application/pdf' ? await extractTextFromPDF(file) : await file.text();
       setLastScriptContent(text);
-      // Automatically send to Frank
-      handleFrankResponse(`[Script Uploaded] Analyze this: ${text.slice(0, 10000)}`);
+      handleFrankResponse(`[Script Uploaded] Analyze this: ${text.slice(0, 5000)}`);
     } catch (e) { console.error(e); } finally { setIsProcessing(false); }
   };
 
@@ -158,14 +156,14 @@ const App = () => {
                   <div className={`max-w-[75%] p-6 ${m.role === 'user' ? 'bg-stone-800 text-white rounded-2xl shadow-xl' : 'bg-white border shadow-sm'}`}>{m.content}</div>
                 </div>
               ))}
-              {isProcessing && <div className="p-10 animate-pulse text-stone-400 font-bold italic">Frank is looking at your pages...</div>}
+              {isProcessing && <div className="p-10 animate-pulse text-stone-400 font-bold italic">Frank is considering...</div>}
               <div ref={scrollRef} />
             </div>
             <div className="bg-white border-t p-5 shrink-0 shadow-lg">
               <div className="flex items-center gap-4 max-w-5xl mx-auto w-full">
                 <input value={inputText} onChange={e => setInputText(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleFrankResponse(inputText)} placeholder="Defend your arc..." className="flex-1 px-6 py-4 bg-stone-50 rounded-xl outline-none" />
                 <button onClick={() => handleFrankResponse(inputText)} className="w-12 h-12 bg-stone-800 text-white rounded-full flex items-center justify-center shadow-md hover:bg-black transition-colors"><Send size={18} /></button>
-                <button onClick={toggleDictation} className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-red-600 text-white animate-pulse' : 'bg-stone-50 text-stone-400 hover:bg-stone-200'}`}><Mic size={20}/></button>
+                <button onClick={toggleDictation} className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-red-600 text-white animate-pulse' : 'bg-stone-50 text-stone-400'}`}><Mic size={20}/></button>
                 <label className="w-12 h-12 bg-stone-50 rounded-full flex items-center justify-center cursor-pointer hover:bg-stone-200 transition-colors"><FileUp size={20}/><input type="file" className="hidden" accept=".pdf" onChange={(e) => handleScriptUpload(e.target.files[0])}/></label>
               </div>
             </div>
@@ -176,7 +174,7 @@ const App = () => {
                <label className="flex items-center gap-2 px-5 py-2 bg-stone-800 rounded-full cursor-pointer text-[10px] font-bold uppercase tracking-widest hover:bg-stone-700 transition-colors"><FileUp size={14}/> Upload PDF<input type="file" className="hidden" accept=".pdf" onChange={(e) => handleScriptUpload(e.target.files[0])}/></label>
                <div className="flex items-center gap-3">
                   <button className="px-8 py-2 bg-white text-black rounded-full font-black uppercase text-xs tracking-widest hover:bg-stone-200 transition-colors">PLAY READ-THROUGH</button>
-                  <button className="p-2 bg-stone-800 rounded-full text-red-400 shadow-sm"><StopCircle size={16} /></button>
+                  <button onClick={() => setReadState('stopped')} className="p-2 bg-stone-800 rounded-full text-red-400 shadow-sm"><StopCircle size={16} /></button>
                </div>
             </div>
             <div className="flex-1 flex overflow-hidden">
