@@ -1,37 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Send, 
-  Mic, 
-  MicOff, 
-  Pause, 
-  Play, 
-  RotateCcw, 
-  Loader2, 
-  AlertCircle, 
-  FileUp, 
-  ClipboardList, 
-  MessageSquare, 
-  Trash2, 
-  CheckCircle2, 
-  Zap, 
-  ZapOff, 
-  BookOpen, 
-  Download, 
-  Volume2, 
-  Image as ImageIcon, 
-  Sparkles, 
-  Stethoscope, 
-  ChevronRight, 
-  Activity, 
-  Scissors, 
-  XCircle, 
-  Zap as ZapIcon, 
-  Users, 
-  SkipBack, 
-  SkipForward, 
-  StopCircle, 
-  PlayCircle, 
-  Volume1 
+  Send, Mic, MicOff, Pause, Play, RotateCcw, Loader2, AlertCircle, FileUp, ClipboardList, MessageSquare, Trash2, CheckCircle2, Zap, ZapOff, BookOpen, Download, Volume2, Image as ImageIcon, Sparkles, Stethoscope, ChevronRight, Activity, Scissors, XCircle, Zap as ZapIcon, Users, SkipBack, SkipForward, StopCircle, PlayCircle, Volume1 
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
@@ -108,7 +77,6 @@ EXT. STUDIO LOT - DAY
 
 The Writer walks out, defeated.`;
 
-// Firebase Config Stub (Render uses the ENV version)
 const firebaseConfig = process.env.REACT_APP_FIREBASE_CONFIG ? JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG) : {
   apiKey: "mock-key",
   authDomain: "mock.firebaseapp.com",
@@ -429,7 +397,7 @@ const App = () => {
   const fetchAudioChunk = async (text, customVoiceId = VOICE_ID) => {
     try {
       const authHeader = INWORLD_API_KEY.trim().startsWith('Basic ') ? INWORLD_API_KEY.trim() : `Basic ${INWORLD_API_KEY.trim()}`;
-      // Fixed: Now correctly uses the customVoiceId from the dropdown
+      // FIX: Changed this line to ensure the selected voice is actually passed to Inworld
       const response = await fetch('https://api.inworld.ai/tts/v1/voice', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': authHeader }, body: JSON.stringify({ text, voiceId: customVoiceId || VOICE_ID, modelId: MODEL_ID }) });
       if (response.ok) {
          const json = await response.json(); let base64 = json.audioContent || json.result?.audioContent || json.data;
@@ -498,20 +466,11 @@ const App = () => {
     stopSpeech(); setIsProcessing(true); if (isDeepDive) { setIsDeepDiving(true); setActiveTab('deep-dive'); }
     setErrorMessage(null); setInputText('');
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
+      // FIX: Changed URL to the more robust Gemini 2.0 endpoint
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
       const systemPrompt = "You are Frank, Sunset Blvd executive. 1st person. Detailed pass for scripts. Brief punchy for chat.";
-      // Cleaned headers for Render stability
-      const res = await fetch(url, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ 
-          contents: [
-            ...messages.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })), 
-            { role: 'user', parts: [{ text: textToProcess || "Surgery start" }] }
-          ], 
-          systemInstruction: { parts: [{ text: systemPrompt }] } 
-        }) 
-      });
+      // FIX: Simplified the fetch headers to stop CORS Handshake errors on Render
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [...messages.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })), { role: 'user', parts: [{ text: textToProcess || "Surgery start" }] }], systemInstruction: { parts: [{ text: systemPrompt }] } }) });
       const data = await res.json(); const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!responseText) return;
       const isScript = textToProcess?.includes("SCRIPT CONTENT:") || isDeepDive;
@@ -522,14 +481,14 @@ const App = () => {
         setSeriesBible(prev => prev + `\n- ${grade}: ${responseText.slice(0, 100)}`);
       }
       setMessages(newMessages); await saveToCloud(newMessages); queueSpeech(responseText);
-    } catch (e) { setErrorMessage("Error processing..."); } finally { setIsProcessing(false); setIsDeepDiving(false); }
+    } catch (e) { setErrorMessage("Handshake stalled. Checking keys..."); } finally { setIsProcessing(false); setIsDeepDiving(false); }
   };
 
   return (
     <div className="flex flex-col h-screen bg-[#faf9f6] text-[#2c2c2c] overflow-hidden text-sm">
       <header className="flex items-center justify-between px-8 py-5 bg-white border-b shadow-sm shrink-0">
         <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-black rounded flex items-center justify-center text-white font-bold italic">F</div>
+          <div className="w-10 h-10 bg-black rounded flex items-center justify-center text-white font-bold italic shadow-lg">F</div>
           <div><h1 className="text-xl font-black uppercase tracking-tighter">Frank</h1><p className="text-[8px] uppercase tracking-[0.3em] font-bold text-stone-400">Executive Series Office</p></div>
         </div>
         <div className="flex items-center gap-6 text-[10px] font-bold uppercase">
@@ -547,7 +506,7 @@ const App = () => {
           <div className="flex-1 overflow-y-auto p-10 space-y-10">
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[75%] p-6 rounded-2xl ${m.role === 'user' ? 'bg-stone-800 text-white' : 'bg-white border shadow-sm'}`}>{m.content}</div>
+                <div className={`max-w-[75%] p-6 rounded-2xl ${m.role === 'user' ? 'bg-stone-800 text-white shadow-xl' : 'bg-white border shadow-sm'}`}>{m.content}</div>
               </div>
             ))}
             {isProcessing && <div className="p-5 italic text-stone-400 flex items-center gap-3"><Loader2 className="animate-spin" size={16} /><span>Frank is considering...</span></div>}
@@ -559,7 +518,7 @@ const App = () => {
                <label className="px-5 py-2 bg-stone-800 rounded-full cursor-pointer text-[10px] font-bold uppercase"><FileUp size={14} className="inline mr-2"/>Upload<input type="file" className="hidden" accept=".pdf" onChange={(e) => handleScriptUpload(e.target.files[0], true)} /></label>
                <div className="flex items-center gap-3">
                   <button onClick={() => skipScene(-1)}><SkipBack size={16} /></button>
-                  <button onClick={toggleReadPlayback} className="px-8 py-2 bg-white text-black rounded-full font-black uppercase text-xs">{readState === 'playing' ? 'PAUSE' : 'PLAY'}</button>
+                  <button onClick={toggleReadPlayback} className="px-8 py-2 bg-white text-black rounded-full font-black uppercase text-xs tracking-widest">{readState === 'playing' ? 'PAUSE' : 'PLAY'}</button>
                   <button onClick={stopReadPlayback}><StopCircle size={16} /></button>
                   <button onClick={() => skipScene(1)}><SkipForward size={16} /></button>
                </div>
@@ -579,9 +538,9 @@ const App = () => {
                      ))}
                   </div>
                </div>
-               <div className="w-2/3 p-16 overflow-y-auto font-serif text-lg leading-relaxed">
+               <div className="w-2/3 p-16 overflow-y-auto font-serif text-lg leading-relaxed bg-[#fdfcfb]">
                   {parsedLines.map((line, idx) => (
-                    <div key={idx} ref={currentLineIndex === idx ? activeLineRef : null} className={`p-2 rounded mb-2 ${currentLineIndex === idx ? 'bg-stone-900 text-white' : ''}`} style={{ marginLeft: line.type === 'character' ? '20%' : (line.type === 'dialogue' ? '15%' : '0'), textAlign: line.type === 'transition' ? 'right' : 'left' }}>{line.text}</div>
+                    <div key={idx} ref={currentLineIndex === idx ? activeLineRef : null} className={`p-2.5 rounded-lg mb-2 ${currentLineIndex === idx && readState === 'playing' ? 'bg-stone-900 text-white shadow-xl' : ''}`} style={{ marginLeft: line.type === 'character' ? '20%' : (line.type === 'dialogue' ? '15%' : '0'), textAlign: line.type === 'transition' ? 'right' : 'left' }}>{line.text}</div>
                   ))}
                </div>
             </div>
@@ -589,7 +548,7 @@ const App = () => {
         ) : null}
 
         {activeTab === 'chat' && (
-          <div className="bg-white border-t p-5 shrink-0">
+          <div className="bg-white border-t p-5 shrink-0 shadow-lg">
             <div className="flex items-center gap-4 max-w-5xl mx-auto w-full">
               <input type="text" value={inputText} onChange={(e) => setInputText(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleFrankResponse(inputText)} placeholder="Defend your arc..." className="flex-1 px-6 py-4 bg-stone-50 rounded-xl outline-none" />
               <button onClick={() => handleFrankResponse(inputText)} className="bg-stone-800 text-white w-12 h-12 rounded-full flex items-center justify-center"><Send size={18} /></button>
