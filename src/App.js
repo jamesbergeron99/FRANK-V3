@@ -12,9 +12,9 @@ const INWORLD_API_KEY = process.env.REACT_APP_INWORLD_API_KEY;
 const VOICE_ID = "default-oglabcjnetcklcq7rghmbw__jimmy"; 
 const MODEL_ID = "inworld-tts-1.5-max";
 
-// STRICTLY CONFIRMED VOICE LIST
+// --- ONLY THE CONFIRMED WORKING VOICES ---
 const INWORLD_VOICES = [
-  { id: 'default-oglabcjnetcklcq7rghmbw__jimmy', name: 'Jimmy (Default Male)' },
+  { id: 'default-oglabcjnetcklcq7rghmbw__jimmy', name: 'Jimmy (Default)' },
   { id: 'default-oglabcjnetcklcq7rghmbw__alex', name: 'Alex (Male)' },
   { id: 'default-oglabcjnetcklcq7rghmbw__craig', name: 'Craig (Male)' },
   { id: 'default-oglabcjnetcklcq7rghmbw__dennis', name: 'Dennis (Male)' },
@@ -33,62 +33,20 @@ const INWORLD_VOICES = [
   { id: 'default-oglabcjnetcklcq7rghmbw__pixie', name: 'Pixie (Child)' }
 ];
 
-const DEMO_SCRIPT = `INT. SUNSET BLVD EXECUTIVE OFFICE - DAY\n\nFrank sits behind a massive mahogany desk. He's smoking a cigar that costs more than a car.\n\nFRANK\nI told you, kid. The third act needs explosions.\n\nWRITER\n(nervously)\nBut it's a quiet drama about a family grieving...\n\nFRANK\n(laughing)\nGrieving? I'll give them something to grieve about when the box office numbers come in. Add the explosions.`;
-
-// Firebase Configuration (Using Mock for Local, ENV for Render)
 const firebaseConfig = { apiKey: "mock", authDomain: "mock", projectId: "mock", storageBucket: "mock", messagingSenderId: "000", appId: "000" };
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'frank-exec-series-v14';
 
-const fetchWithRetry = async (url, options) => {
-  const delays = [1000, 2000, 4000];
-  for (let i = 0; i < delays.length; i++) {
-    try {
-      const res = await fetch(url, options);
-      if (res.ok) return res;
-    } catch (e) {}
-    await new Promise(r => setTimeout(r, delays[i]));
-  }
-};
-
-const extractTextFromPDF = async (file) => {
-  if (!window.pdfjsLib) {
-    await new Promise((resolve) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
-      script.onload = () => {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-        resolve();
-      };
-      document.head.appendChild(script);
-    });
-  }
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  let fullText = "";
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    fullText += content.items.map(item => item.str).join(" ") + "\n";
-  }
-  return fullText;
-};
-
 const App = () => {
   const [user, setUser] = useState(null);
-  const [messages, setMessages] = useState([{ role: 'assistant', content: "I'm Frank. Let's quit the posturing and see if these pages have a heartbeat. Send me the script when you're ready to get real." }]);
+  const [messages, setMessages] = useState([{ role: 'assistant', content: "I'm Frank. Let's see if these pages have a heartbeat. Send me the script when you're ready to get real." }]);
   const [inputText, setInputText] = useState('');
-  const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [activeTab, setActiveTab] = useState('chat');
   const [errorMessage, setErrorMessage] = useState(null);
-  const [scriptData, setScriptData] = useState(null);
-  const [deepDiveData, setDeepDiveData] = useState(null);
   const [lastScriptContent, setLastScriptContent] = useState("");
-  const [posterUrl, setPosterUrl] = useState(null);
   const [parsedLines, setParsedLines] = useState([]);
   const [cast, setCast] = useState([]);
   const [voiceAssignments, setVoiceAssignments] = useState({ Narrator: '' }); 
@@ -101,36 +59,15 @@ const App = () => {
   const activeLineRef = useRef(null);
   const voiceAssignmentsRef = useRef({});
   const readStateRef = useRef('stopped');
-  const parsedLinesRef = useRef([]);
 
   useEffect(() => { voiceAssignmentsRef.current = voiceAssignments; }, [voiceAssignments]);
   useEffect(() => { readStateRef.current = readState; }, [readState]);
-  useEffect(() => { parsedLinesRef.current = parsedLines; }, [parsedLines]);
+  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: 'smooth' }); }, [messages, isProcessing]);
 
   useEffect(() => {
     signInAnonymously(auth).catch(() => setErrorMessage("Authentication Failed."));
     return onAuthStateChanged(auth, setUser);
   }, []);
-
-  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: 'smooth' }); }, [messages, isProcessing]);
-
-  // PARSER LOGIC
-  useEffect(() => {
-    const text = lastScriptContent || DEMO_SCRIPT;
-    const lines = text.split('\n');
-    const parsed = []; const characters = new Set();
-    lines.forEach((line, idx) => {
-      const trimmed = line.trim();
-      if (!trimmed) return;
-      if (trimmed === trimmed.toUpperCase() && trimmed.length > 1 && !trimmed.includes('.')) {
-        characters.add(trimmed);
-        parsed.push({ id: idx, type: 'character', text: trimmed });
-      } else {
-        parsed.push({ id: idx, type: 'dialogue', text: trimmed });
-      }
-    });
-    setParsedLines(parsed); setCast(Array.from(characters));
-  }, [lastScriptContent]);
 
   const fetchAudioChunk = async (text, customVoiceId) => {
     const vId = customVoiceId || VOICE_ID;
@@ -149,7 +86,7 @@ const App = () => {
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
         return bytes.buffer;
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("Inworld Error:", e); }
   };
 
   const handleFrankResponse = async (text) => {
@@ -166,14 +103,6 @@ const App = () => {
       const responseText = data.candidates[0].content.parts[0].text;
       setMessages(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: responseText }]);
     } catch (e) { setErrorMessage("Gemini link failed."); } finally { setIsProcessing(false); }
-  };
-
-  const handleScriptUpload = async (file) => {
-    if (!file) return;
-    setIsProcessing(true);
-    const text = file.type === 'application/pdf' ? await extractTextFromPDF(file) : await file.text();
-    setLastScriptContent(text);
-    handleFrankResponse(`[Script Uploaded] Analyze this: ${text.slice(0, 10000)}`);
   };
 
   return (
@@ -206,7 +135,6 @@ const App = () => {
               <div className="flex items-center gap-4 max-w-5xl mx-auto w-full">
                 <input value={inputText} onChange={e => setInputText(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleFrankResponse(inputText)} placeholder="Defend your arc..." className="flex-1 px-6 py-4 bg-stone-50 rounded-xl outline-none" />
                 <button onClick={() => handleFrankResponse(inputText)} className="w-12 h-12 bg-stone-800 text-white rounded-full flex items-center justify-center shadow-md"><Send size={18} /></button>
-                <label className="w-12 h-12 bg-stone-50 rounded-full flex items-center justify-center cursor-pointer hover:bg-stone-100 transition-colors"><FileUp size={20}/><input type="file" className="hidden" accept=".pdf" onChange={(e) => handleScriptUpload(e.target.files[0])} /></label>
               </div>
             </div>
           </>
@@ -217,7 +145,7 @@ const App = () => {
             <div className="bg-stone-900 text-white p-3 flex items-center justify-between px-8">
                <div className="flex items-center gap-3">
                   <button className="px-8 py-2 bg-white text-black rounded-full font-black uppercase text-xs tracking-widest">PLAY READ-THROUGH</button>
-                  <button className="p-2 bg-stone-800 rounded-full text-red-400 shadow-sm"><StopCircle size={16} /></button>
+                  <button onClick={() => setReadState('stopped')} className="p-2 bg-stone-800 rounded-full text-red-400 shadow-sm"><StopCircle size={16} /></button>
                </div>
             </div>
             <div className="flex-1 flex overflow-hidden">
@@ -235,18 +163,10 @@ const App = () => {
                      ))}
                   </div>
                </div>
-               <div className="w-1/2 overflow-y-auto p-16 font-serif text-lg leading-relaxed">
-                  {parsedLines.map((line, idx) => (
-                    <div key={idx} className={`p-1.5 rounded mb-2 ${currentLineIndex === idx ? 'bg-stone-900 text-white' : ''}`} style={{ marginLeft: line.type === 'character' ? '20%' : '0' }}>{line.text}</div>
-                  ))}
+               <div className="w-1/2 overflow-y-auto p-16 font-serif text-lg leading-relaxed text-stone-300">
+                  Upload a script to begin table read formatting.
                </div>
             </div>
-          </div>
-        )}
-
-        {activeTab === 'executive-report' && (
-          <div className="p-20 overflow-y-auto bg-white max-w-4xl mx-auto font-serif text-lg leading-relaxed">
-            {scriptData ? scriptData.content : "No analysis report generated yet. Send Frank a script in the Lounge."}
           </div>
         )}
       </main>
