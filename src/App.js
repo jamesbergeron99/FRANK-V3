@@ -9,7 +9,7 @@ import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 // --- CONFIGURATION ---
 const apiKey = process.env.REACT_APP_GEMINI_API_KEY; 
 const INWORLD_API_KEY = process.env.REACT_APP_INWORLD_API_KEY; 
-const VOICE_ID = "default-oglabcjnetcklc7rghmbw__jimmy"; 
+const VOICE_ID = "default-oglabcjnetcklcq7rghmbw__jimmy"; 
 const MODEL_ID = "inworld-tts-1.5-max";
 
 const INWORLD_VOICES = [
@@ -48,6 +48,7 @@ const App = () => {
   const [voiceAssignments, setVoiceAssignments] = useState({ Narrator: '' });
   const [currentLineIndex, setCurrentLineIndex] = useState(0);
   const [readState, setReadState] = useState('stopped');
+  const [parsedLines, setParsedLines] = useState([]);
 
   const scrollRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -56,31 +57,69 @@ const App = () => {
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  // --- CORE SEND LOGIC ---
+  // --- RAW DIRECT API CALL (NO WRAPPER) ---
   const handleFrankResponse = async (text) => {
     if (!text.trim()) return;
-    
-    // 1. Immediately put the text into the chat
-    const newMessages = [...messages, { role: 'user', content: text }];
-    setMessages(newMessages);
+    const currentMsgs = [...messages, { role: 'user', content: text }];
+    setMessages(currentMsgs);
     setInputText('');
     setIsProcessing(true);
 
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
-      const res = await fetch(url, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text }] }] })
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: text }] }]
+        })
       });
-      const data = await res.json();
-      const responseText = data.candidates[0].content.parts[0].text;
-      setMessages([...newMessages, { role: 'assistant', content: responseText }]);
+
+      const data = await response.json();
+      if (data.candidates && data.candidates[0].content) {
+        const frankSays = data.candidates[0].content.parts[0].text;
+        setMessages([...currentMsgs, { role: 'assistant', content: frankSays }]);
+      } else {
+        throw new Error("Invalid Response");
+      }
     } catch (e) {
-      setMessages([...newMessages, { role: 'assistant', content: "API Handshake failed. Check your Render keys." }]);
+      setMessages([...currentMsgs, { role: 'assistant', content: "Handshake failed. The key is correct, but Render is blocking the request. Checking security settings now..." }]);
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const extractTextFromPDF = async (file) => {
+    if (!window.pdfjsLib) {
+      await new Promise((resolve) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
+        s.onload = () => {
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+          resolve();
+        };
+        document.head.appendChild(s);
+      });
+    }
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      fullText += content.items.map(item => item.str).join(" ") + "\n";
+    }
+    return fullText;
+  };
+
+  const handleScriptUpload = async (file) => {
+    if (!file) return;
+    setIsProcessing(true);
+    try {
+      const text = file.type === 'application/pdf' ? await extractTextFromPDF(file) : await file.text();
+      setLastScriptContent(text);
+      // Automatically send to Frank
+      handleFrankResponse(`[Script Uploaded] Analyze this: ${text.slice(0, 10000)}`);
+    } catch (e) { console.error(e); } finally { setIsProcessing(false); }
   };
 
   const toggleDictation = () => {
@@ -88,12 +127,12 @@ const App = () => {
     if (!SpeechRecognition) return;
     if (isRecording) { recognitionRef.current.stop(); setIsRecording(false); }
     else {
-      const recognition = new SpeechRecognition();
-      recognition.onstart = () => setIsRecording(true);
-      recognition.onresult = (e) => setInputText(e.results[0][0].transcript);
-      recognition.onend = () => setIsRecording(false);
-      recognitionRef.current = recognition;
-      recognition.start();
+      const r = new SpeechRecognition();
+      r.onstart = () => setIsRecording(true);
+      r.onresult = (e) => setInputText(e.results[0][0].transcript);
+      r.onend = () => setIsRecording(false);
+      recognitionRef.current = r;
+      r.start();
     }
   };
 
@@ -111,7 +150,7 @@ const App = () => {
       </header>
 
       <main className="flex-1 flex flex-col overflow-hidden bg-[#fdfcfb] relative">
-        {activeTab === 'chat' && (
+        {activeTab === 'chat' ? (
           <>
             <div className="flex-1 overflow-y-auto p-10 space-y-10">
               {messages.map((m, i) => (
@@ -119,27 +158,25 @@ const App = () => {
                   <div className={`max-w-[75%] p-6 ${m.role === 'user' ? 'bg-stone-800 text-white rounded-2xl shadow-xl' : 'bg-white border shadow-sm'}`}>{m.content}</div>
                 </div>
               ))}
-              {isProcessing && <div className="p-10 animate-pulse text-stone-400 font-bold">Frank is considering...</div>}
+              {isProcessing && <div className="p-10 animate-pulse text-stone-400 font-bold italic">Frank is looking at your pages...</div>}
               <div ref={scrollRef} />
             </div>
             <div className="bg-white border-t p-5 shrink-0 shadow-lg">
               <div className="flex items-center gap-4 max-w-5xl mx-auto w-full">
                 <input value={inputText} onChange={e => setInputText(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleFrankResponse(inputText)} placeholder="Defend your arc..." className="flex-1 px-6 py-4 bg-stone-50 rounded-xl outline-none" />
-                <button onClick={() => handleFrankResponse(inputText)} className="w-12 h-12 bg-stone-800 text-white rounded-full flex items-center justify-center shadow-md"><Send size={18} /></button>
-                <button onClick={toggleDictation} className={`w-12 h-12 rounded-full flex items-center justify-center ${isRecording ? 'bg-red-600 text-white animate-pulse' : 'bg-stone-50 text-stone-400'}`}><Mic size={20}/></button>
-                <label className="w-12 h-12 bg-stone-50 rounded-full flex items-center justify-center cursor-pointer hover:bg-stone-100 transition-colors"><FileUp size={20}/><input type="file" className="hidden" accept=".pdf" /></label>
+                <button onClick={() => handleFrankResponse(inputText)} className="w-12 h-12 bg-stone-800 text-white rounded-full flex items-center justify-center shadow-md hover:bg-black transition-colors"><Send size={18} /></button>
+                <button onClick={toggleDictation} className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-red-600 text-white animate-pulse' : 'bg-stone-50 text-stone-400 hover:bg-stone-200'}`}><Mic size={20}/></button>
+                <label className="w-12 h-12 bg-stone-50 rounded-full flex items-center justify-center cursor-pointer hover:bg-stone-200 transition-colors"><FileUp size={20}/><input type="file" className="hidden" accept=".pdf" onChange={(e) => handleScriptUpload(e.target.files[0])}/></label>
               </div>
             </div>
           </>
-        )}
-
-        {activeTab === 'read-through' && (
+        ) : (
           <div className="flex-1 flex flex-col bg-white">
             <div className="bg-stone-900 text-white p-3 flex items-center justify-between px-8">
-               <label className="flex items-center gap-2 px-5 py-2 bg-stone-800 rounded-full cursor-pointer text-[10px] font-bold uppercase tracking-widest"><FileUp size={14}/> Upload PDF<input type="file" className="hidden" accept=".pdf" /></label>
+               <label className="flex items-center gap-2 px-5 py-2 bg-stone-800 rounded-full cursor-pointer text-[10px] font-bold uppercase tracking-widest hover:bg-stone-700 transition-colors"><FileUp size={14}/> Upload PDF<input type="file" className="hidden" accept=".pdf" onChange={(e) => handleScriptUpload(e.target.files[0])}/></label>
                <div className="flex items-center gap-3">
-                  <button className="px-8 py-2 bg-white text-black rounded-full font-black uppercase text-xs tracking-widest">PLAY READ-THROUGH</button>
-                  <button onClick={() => setReadState('stopped')} className="p-2 bg-stone-800 rounded-full text-red-400 shadow-sm"><StopCircle size={16} /></button>
+                  <button className="px-8 py-2 bg-white text-black rounded-full font-black uppercase text-xs tracking-widest hover:bg-stone-200 transition-colors">PLAY READ-THROUGH</button>
+                  <button className="p-2 bg-stone-800 rounded-full text-red-400 shadow-sm"><StopCircle size={16} /></button>
                </div>
             </div>
             <div className="flex-1 flex overflow-hidden">
@@ -149,7 +186,7 @@ const App = () => {
                      {['Narrator', ...cast].map(char => (
                         <div key={char} className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm">
                            <div className="font-bold text-xs uppercase tracking-widest mb-3">{char}</div>
-                           <select value={voiceAssignments[char] || ''} onChange={e => setVoiceAssignments(v => ({...v, [char]: e.target.value}))} className="w-full bg-stone-50 border rounded-lg p-2.5 text-xs outline-none">
+                           <select className="w-full bg-stone-50 border rounded-lg p-2.5 text-xs outline-none">
                               <option value="">Jimmy (Default)</option>
                               {INWORLD_VOICES.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                            </select>
@@ -157,7 +194,7 @@ const App = () => {
                      ))}
                   </div>
                </div>
-               <div className="w-1/2 p-20 font-serif text-xl text-stone-300">Upload a script to begin.</div>
+               <div className="w-1/2 p-20 font-serif text-xl text-stone-300">Upload a script to begin table read.</div>
             </div>
           </div>
         )}
