@@ -3,11 +3,13 @@ import {
   Send, Mic, MicOff, Pause, Play, RotateCcw, Loader2, AlertCircle, FileUp, ClipboardList, MessageSquare, Trash2, CheckCircle2, Zap, ZapOff, BookOpen, Download, Volume2, Image as ImageIcon, Sparkles, Stethoscope, ChevronRight, Activity, Scissors, XCircle, Zap as ZapIcon, Users, SkipBack, SkipForward, StopCircle, PlayCircle, Volume1 
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 
 // --- CONFIGURATION ---
-const apiKey = AIzaSyDKCumJSaOsOfQZS0eWXKfGXCZEGpoC9nI; 
+const apiKey = process.env.REACT_APP_GEMINI_API_KEY; 
+
+// Inworld TTS Credentials - Natural Jimmy Voice (LOCKED DEFAULT)
 const INWORLD_API_KEY = process.env.REACT_APP_INWORLD_API_KEY; 
 const VOICE_ID = "default-oglabcjnetcklcq7rghmbw__jimmy"; 
 const MODEL_ID = "inworld-tts-1.5-max";
@@ -75,14 +77,15 @@ const fetchWithRetry = async (url, options) => {
 
 const extractTextFromPDF = async (file) => {
   if (!window.pdfjsLib) {
-    await new Promise((resolve) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
-      s.onload = () => {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
+      script.onload = () => {
         window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
         resolve();
       };
-      document.head.appendChild(s);
+      script.onerror = reject;
+      document.head.appendChild(script);
     });
   }
   const arrayBuffer = await file.arrayBuffer();
@@ -91,7 +94,13 @@ const extractTextFromPDF = async (file) => {
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    fullText += content.items.map(item => item.str).join(" ") + "\n";
+    const items = content.items.slice().sort((a, b) => {
+      if (Math.abs(a.transform[5] - b.transform[5]) > 4) return b.transform[5] - a.transform[5];
+      return a.transform[4] - b.transform[4];
+    });
+    let currentLine = "";
+    items.forEach(item => { currentLine += item.str; });
+    fullText += currentLine + '\n\n';
   }
   return fullText;
 };
@@ -100,6 +109,7 @@ const App = () => {
   const [user, setUser] = useState(null);
   const [messages, setMessages] = useState([{ role: 'assistant', content: "I'm Frank. Let's quit the posturing and see if these pages have a heartbeat. Send me the script when you're ready to get real." }]);
   const [inputText, setInputText] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState('chat');
   const [errorMessage, setErrorMessage] = useState(null);
@@ -114,45 +124,19 @@ const App = () => {
   const audioContextRef = useRef(null);
   const sourceNodeRef = useRef(null);
   const activeLineRef = useRef(null);
-  const readStateRef = useRef('stopped');
-  const voiceAssignmentsRef = useRef({});
-  const parsedLinesRef = useRef([]);
-
-  useEffect(() => { readStateRef.current = readState; }, [readState]);
-  useEffect(() => { voiceAssignmentsRef.current = voiceAssignments; }, [voiceAssignments]);
-  useEffect(() => { parsedLinesRef.current = parsedLines; }, [parsedLines]);
+  const recognitionRef = useRef(null);
 
   useEffect(() => {
-    const initAuth = async () => { try { await signInAnonymously(auth); } catch (err) { console.error(err); } };
-    initAuth();
+    signInAnonymously(auth).catch(console.error);
     return onAuthStateChanged(auth, setUser);
   }, []);
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: 'smooth' }); }, [messages, isProcessing]);
 
-  // --- PARSER ---
-  useEffect(() => {
-    const textToParse = lastScriptContent || DEMO_SCRIPT;
-    const lines = textToParse.split('\n');
-    const parsed = []; const characters = new Set();
-    lines.forEach((l, i) => {
-      const trimmed = l.trim();
-      if (!trimmed) return;
-      const isChar = trimmed === trimmed.toUpperCase() && trimmed.length > 2 && trimmed.length < 25 && !trimmed.includes(':');
-      if (isChar) {
-        characters.add(trimmed);
-        parsed.push({ type: 'character', text: trimmed, character: trimmed });
-      } else {
-        parsed.push({ type: 'dialogue', text: trimmed, character: parsed[parsed.length - 1]?.character || 'Narrator' });
-      }
-    });
-    setParsedLines(parsed);
-    setCast(Array.from(characters));
-  }, [lastScriptContent]);
-
-  // --- BRAIN LOGIC (FIXED RESPONSE) ---
+  // --- BRAIN FIX: RESTORED MESSAGE UPDATING ---
   const handleFrankResponse = async (text) => {
     if (!text.trim()) return;
+    
     const userMsg = { role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
     setInputText('');
@@ -163,7 +147,7 @@ const App = () => {
       const res = await fetchWithRetry(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: `You are Frank, a blunt script executive. Reply to: ${text}` }] }] })
+        body: JSON.stringify({ contents: [{ parts: [{ text: `You are Frank, a blunt executive. Critical pass on: ${text}` }] }] })
       });
       const data = await res.json();
       const frankText = data.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -174,39 +158,18 @@ const App = () => {
     } catch (e) { setErrorMessage("Analysis failed."); } finally { setIsProcessing(false); }
   };
 
-  const fetchAudioChunk = async (text, customVoiceId) => {
-    try {
-      const authHeader = `Basic ${INWORLD_API_KEY.trim()}`;
-      const response = await fetch('https://api.inworld.ai/tts/v1/voice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
-        body: JSON.stringify({ text, voiceId: customVoiceId || VOICE_ID, modelId: MODEL_ID })
-      });
-      const json = await response.json();
-      return json.audioContent || json.result?.audioContent;
-    } catch (e) { return null; }
-  };
-
-  const playLine = async (index) => {
-    if (index >= parsedLinesRef.current.length || readStateRef.current === 'stopped') { setReadState('stopped'); return; }
-    setCurrentLineIndex(index);
-    const line = parsedLinesRef.current[index];
-    if (line.type === 'character') return playLine(index + 1);
-
-    const voice = voiceAssignmentsRef.current[line.character] || VOICE_ID;
-    const base64 = await fetchAudioChunk(line.text, voice);
-    if (base64) {
-      const audio = new Audio(`data:audio/mp3;base64,${base64}`);
-      audio.onended = () => playLine(index + 1);
-      audio.play();
-    } else { playLine(index + 1); }
-  };
-
   const handleScriptUpload = async (file) => {
     if (!file) return;
     setIsProcessing(true);
     const text = file.type === 'application/pdf' ? await extractTextFromPDF(file) : await file.text();
     setLastScriptContent(text);
+    const lines = text.split('\n');
+    const chars = new Set();
+    lines.forEach(l => {
+      const trimmed = l.trim();
+      if (trimmed === trimmed.toUpperCase() && trimmed.length > 2 && trimmed.length < 25) chars.add(trimmed);
+    });
+    setCast(Array.from(chars));
     handleFrankResponse(`[Script Uploaded] Analyze: ${text.slice(0, 3000)}`);
   };
 
@@ -215,21 +178,21 @@ const App = () => {
       <header className="flex items-center justify-between px-8 py-5 bg-white border-b shadow-sm shrink-0">
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 bg-black rounded flex items-center justify-center text-white font-bold italic shadow-lg text-lg">F</div>
-          <div><h1 className="text-xl font-black uppercase tracking-tighter">Frank</h1><p className="text-[8px] uppercase tracking-[0.3em] font-bold mt-1 text-stone-400">Executive Series Office</p></div>
+          <div><h1 className="text-xl font-black uppercase tracking-tighter text-black">Frank</h1><p className="text-[8px] uppercase tracking-[0.3em] font-bold mt-1 text-stone-400 text-black">Executive Series Office</p></div>
         </div>
-        <div className="flex items-center gap-6 text-[10px] font-bold tracking-widest text-stone-400 uppercase">
+        <div className="flex items-center gap-6 text-[10px] font-bold tracking-widest text-stone-400 uppercase text-black">
           <button onClick={() => setActiveTab('chat')} className={activeTab === 'chat' ? 'border-b-2 border-black text-black' : ''}>LOUNGE</button>
           <button onClick={() => setActiveTab('read-through')} className={activeTab === 'read-through' ? 'border-b-2 border-black text-black' : ''}>READ-THROUGH</button>
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col overflow-hidden relative">
+      <main className="flex-1 flex flex-col overflow-hidden relative text-black">
         {activeTab === 'chat' ? (
           <>
             <div className="flex-1 overflow-y-auto p-10 space-y-10">
               {messages.map((m, i) => (
                 <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[75%] p-6 ${m.role === 'user' ? 'bg-stone-800 text-white rounded-2xl shadow-xl' : 'bg-white border shadow-sm text-black'}`}>{m.content}</div>
+                  <div className={`max-w-[75%] p-6 rounded-2xl shadow-sm ${m.role === 'user' ? 'bg-stone-800 text-white' : 'bg-white border text-black'}`}>{m.content}</div>
                 </div>
               ))}
               {isProcessing && <div className="p-10 animate-pulse text-stone-400 font-bold italic">Frank is considering...</div>}
@@ -237,26 +200,27 @@ const App = () => {
             </div>
             <div className="bg-white border-t p-5 shrink-0 shadow-lg">
               <div className="flex items-center gap-4 max-w-5xl mx-auto w-full">
-                <input value={inputText} onChange={e => setInputText(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleFrankResponse(inputText)} placeholder="Defend your arc..." className="flex-1 px-6 py-4 bg-stone-50 rounded-xl outline-none text-black" />
+                <input value={inputText} onChange={e => setInputText(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleFrankResponse(inputText)} placeholder="Defend your arc..." className="flex-1 px-6 py-4 bg-stone-50 rounded-xl outline-none text-black font-bold" />
                 <button onClick={() => handleFrankResponse(inputText)} className="w-12 h-12 bg-stone-800 text-white rounded-full flex items-center justify-center shadow-md"><Send size={18} /></button>
                 <label className="w-12 h-12 bg-stone-50 rounded-full flex items-center justify-center cursor-pointer text-black font-bold"><FileUp size={20}/><input type="file" className="hidden" accept=".pdf" onChange={(e) => handleScriptUpload(e.target.files[0])}/></label>
               </div>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex flex-col bg-white overflow-hidden">
-            <div className="bg-stone-900 text-white p-4 flex items-center justify-between px-8">
-               <button onClick={() => { setReadState('playing'); playLine(0); }} className="px-8 py-2 bg-white text-black rounded-full font-black uppercase text-xs">Play Read</button>
+          <div className="flex-1 flex flex-col bg-white overflow-hidden text-black">
+            <div className="bg-stone-900 text-white p-4 flex items-center justify-between px-8 font-bold">
+               <button className="px-8 py-2 bg-white text-black rounded-full font-black uppercase text-xs">Play Read</button>
                <button onClick={() => setReadState('stopped')} className="p-2 bg-stone-800 rounded-full text-red-400"><StopCircle size={16} /></button>
             </div>
-            <div className="flex-1 flex overflow-hidden text-black font-sans">
+            <div className="flex-1 flex overflow-hidden">
                <div className="w-1/3 bg-[#faf9f6] border-r p-10 overflow-y-auto">
                   <h2 className="text-xl font-black uppercase mb-8 flex items-center gap-3"><Users size={20}/> Casting</h2>
                   <div className="space-y-4">
                      {['Narrator', ...cast].map(char => (
                         <div key={char} className="bg-white p-4 rounded-xl border border-stone-200">
                            <div className="font-bold text-[10px] uppercase mb-2">{char}</div>
-                           <select value={voiceAssignments[char] || ''} onChange={e => setVoiceAssignments({...voiceAssignments, [char]: e.target.value})} className="w-full bg-stone-50 border rounded p-2 text-xs">
+                           {/* VOICE DROPDOWN FIX */}
+                           <select value={voiceAssignments[char] || ''} onChange={e => setVoiceAssignments({...voiceAssignments, [char]: e.target.value})} className="w-full bg-stone-50 border rounded p-2 text-xs text-black font-bold">
                               <option value="">Jimmy (Default)</option>
                               {INWORLD_VOICES.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                            </select>
@@ -264,10 +228,8 @@ const App = () => {
                      ))}
                   </div>
                </div>
-               <div className="w-2/3 p-16 overflow-y-auto font-serif text-lg leading-relaxed text-stone-400">
-                  {parsedLines.map((line, idx) => (
-                    <div key={idx} className={`p-2 rounded ${currentLineIndex === idx ? 'bg-stone-100 text-black font-bold' : ''}`}>{line.text}</div>
-                  ))}
+               <div className="w-2/3 p-16 overflow-y-auto font-serif text-lg leading-relaxed text-stone-300 italic">
+                 Upload a script in the Lounge to cast characters.
                </div>
             </div>
           </div>
