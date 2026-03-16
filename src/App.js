@@ -46,6 +46,7 @@ const App = () => {
   const [cast, setCast] = useState([]);
   const [voiceAssignments, setVoiceAssignments] = useState({ Narrator: '' });
   const [lastScriptContent, setLastScriptContent] = useState("");
+  const [parsedLines, setParsedLines] = useState([]);
   const [readState, setReadState] = useState('stopped');
 
   const scrollRef = useRef(null);
@@ -57,7 +58,7 @@ const App = () => {
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: 'smooth' }); }, [messages, isProcessing]);
 
-  // --- THE STABLE BRAIN FIX ---
+  // --- THE BRAIN FIX: USING THE CURRENT PRODUCTION NAME ---
   const handleFrankResponse = async (text) => {
     if (!text.trim()) return;
     const userMsg = { role: 'user', content: text };
@@ -66,8 +67,8 @@ const App = () => {
     setIsProcessing(true);
 
     try {
-      // Switched to the absolute stable endpoint for Gemini 1.5 Flash
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
+      // Endpoint using the unified naming convention
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
       
       const response = await fetch(url, {
         method: 'POST',
@@ -80,30 +81,18 @@ const App = () => {
       const data = await response.json();
 
       if (data.error) {
-        // This is a backup: If Gemini Pro fails, it tries the Flash version one more time with a slightly different URL
-        const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
-        const fallbackRes = await fetch(fallbackUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: text }] }] })
-        });
-        const fallbackData = await fallbackRes.json();
-        const fallbackText = fallbackData.candidates?.[0]?.content?.parts?.[0]?.text;
-        
-        if (fallbackText) {
-          setMessages(prev => [...prev, { role: 'assistant', content: fallbackText }]);
-        } else {
-          setMessages(prev => [...prev, { role: 'assistant', content: `Lot Error: ${data.error.message}` }]);
-        }
+        setMessages(prev => [...prev, { role: 'assistant', content: `Studio Lot Error: ${data.error.message}` }]);
         return;
       }
 
       const frankText = data.candidates?.[0]?.content?.parts?.[0]?.text;
       if (frankText) {
         setMessages(prev => [...prev, { role: 'assistant', content: frankText }]);
+      } else {
+        setMessages(prev => [...prev, { role: 'assistant', content: "Connection stalled. Rephrase that for me?" }]);
       }
     } catch (e) {
-      setMessages(prev => [...prev, { role: 'assistant', content: "The terminal is down. Check your Render environment." }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: "The connection to the office is down. Verify the API keys in Render." }]);
     } finally {
       setIsProcessing(false);
     }
@@ -196,7 +185,7 @@ const App = () => {
                      ))}
                   </div>
                </div>
-               <div className="w-2/3 p-20 font-serif text-xl text-stone-300">Upload a script in the Lounge to begin read-through.</div>
+               <div className="w-2/3 p-20 font-serif text-xl text-stone-300 text-center italic">Upload a script in the Lounge to begin read-through.</div>
             </div>
           </div>
         )}
