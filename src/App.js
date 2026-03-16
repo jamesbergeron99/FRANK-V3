@@ -25,7 +25,6 @@ import {
   Activity, 
   Scissors, 
   XCircle, 
-  Zap as ZapIcon, 
   Users, 
   SkipBack, 
   SkipForward, 
@@ -193,7 +192,6 @@ const App = () => {
   const recognitionRef = useRef(null);
   const micBaseTextRef = useRef(""); 
   const handsFreeActiveRef = useRef(false);
-  const abortControllerRef = useRef(null);
   const scriptMemoryRef = useRef(""); 
   const speechTimeoutRef = useRef(null);
   const currentInputRef = useRef('');
