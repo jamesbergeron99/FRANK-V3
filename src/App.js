@@ -3,7 +3,7 @@ import {
   Send, Mic, MicOff, Pause, Play, RotateCcw, Loader2, AlertCircle, FileUp, ClipboardList, MessageSquare, Trash2, CheckCircle2, Zap, ZapOff, BookOpen, Download, Volume2, Image as ImageIcon, Sparkles, Stethoscope, ChevronRight, Activity, Scissors, XCircle, Zap as ZapIcon, Users, SkipBack, SkipForward, StopCircle, PlayCircle, Volume1 
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 
 // --- CONFIGURATION ---
@@ -35,7 +35,7 @@ const INWORLD_VOICES = [
 
 const DEMO_SCRIPT = `INT. SUNSET BLVD EXECUTIVE OFFICE - DAY\n\nFrank sits behind a massive mahogany desk. He's smoking a cigar that costs more than a car.\n\nFRANK\nI told you, kid. The third act needs explosions.\n\nWRITER\n(nervously)\nBut it's a quiet drama about a family grieving...\n\nFRANK\n(laughing)\nGrieving? I'll give them something to grieve about when the box office numbers come in. Add the explosions.`;
 
-// Firebase Configuration (Using Mock for Local, ENV for Render)
+// Firebase Configuration
 const firebaseConfig = { apiKey: "mock", authDomain: "mock", projectId: "mock", storageBucket: "mock", messagingSenderId: "000", appId: "000" };
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -152,20 +152,41 @@ const App = () => {
     } catch (e) { console.error(e); }
   };
 
+  // --- FIXED HANDSHAKE LOGIC ---
   const handleFrankResponse = async (text) => {
     if (!text) return;
     setIsProcessing(true);
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
+      // Switched to a more stable direct URL format for Render
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text }] }] })
+        body: JSON.stringify({ 
+          contents: [{ 
+            parts: [{ text: text }] 
+          }] 
+        })
       });
+      
       const data = await res.json();
-      const responseText = data.candidates[0].content.parts[0].text;
-      setMessages(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: responseText }]);
-    } catch (e) { setErrorMessage("Gemini link failed."); } finally { setIsProcessing(false); }
+      // Added safer extraction of the text string from the Google Brain
+      const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      if (responseText) {
+        setMessages(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: responseText }]);
+        // If it's a script analysis, update the report card
+        if (text.includes("[Script Uploaded]")) {
+          setScriptData({ content: responseText });
+        }
+      } else {
+        throw new Error("Empty response");
+      }
+    } catch (e) { 
+      setErrorMessage("Analysis Link Stalled. Double-check your API key names in Render."); 
+    } finally { 
+      setIsProcessing(false); 
+    }
   };
 
   const handleScriptUpload = async (file) => {
@@ -173,7 +194,7 @@ const App = () => {
     setIsProcessing(true);
     const text = file.type === 'application/pdf' ? await extractTextFromPDF(file) : await file.text();
     setLastScriptContent(text);
-    handleFrankResponse(`[Script Uploaded] Analyze this: ${text.slice(0, 10000)}`);
+    handleFrankResponse(`[Script Uploaded] Analyze this: ${text.slice(0, 5000)}`);
   };
 
   return (
@@ -235,10 +256,8 @@ const App = () => {
                      ))}
                   </div>
                </div>
-               <div className="w-1/2 overflow-y-auto p-16 font-serif text-lg leading-relaxed">
-                  {parsedLines.map((line, idx) => (
-                    <div key={idx} className={`p-1.5 rounded mb-2 ${currentLineIndex === idx ? 'bg-stone-900 text-white' : ''}`} style={{ marginLeft: line.type === 'character' ? '20%' : '0' }}>{line.text}</div>
-                  ))}
+               <div className="w-1/2 overflow-y-auto p-16 font-serif text-lg leading-relaxed text-stone-400">
+                  Upload a script to begin table read formatting.
                </div>
             </div>
           </div>
