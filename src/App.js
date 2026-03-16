@@ -54,7 +54,7 @@ const App = () => {
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: 'smooth' }); }, [messages, isProcessing]);
 
-  // --- THE STABLE V1 BRAIN ---
+  // --- THE BRAIN FIX: V1BETA ENDPOINT ---
   const handleFrankResponse = async (text) => {
     if (!text.trim()) return;
     
@@ -64,8 +64,8 @@ const App = () => {
     setIsProcessing(true);
 
     try {
-      // Switched to the V1 stable production endpoint
-      const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+      // Switched to v1beta explicitly to allow the gemini-1.5-flash model through Render
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
       
       const response = await fetch(url, {
         method: 'POST',
@@ -79,21 +79,21 @@ const App = () => {
 
       const data = await response.json();
 
-      // Check if Google sent back an error (like a quota or key issue)
       if (data.error) {
         setMessages(prev => [...prev, { role: 'assistant', content: `The studio lot sent an error: ${data.error.message}` }]);
         return;
       }
 
+      // Deep scan for the text response
       const frankText = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
       if (frankText) {
         setMessages(prev => [...prev, { role: 'assistant', content: frankText }]);
       } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: "I'm reading the pages, but the ink is dry. Try asking me a direct question about the characters." }]);
+        setMessages(prev => [...prev, { role: 'assistant', content: "I'm here, kid, but the signal is weak. Rephrase that for me?" }]);
       }
     } catch (e) {
-      setMessages(prev => [...prev, { role: 'assistant', content: "The connection to the office is down. Verify the API keys in your Render settings." }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: "The connection to the studio lot is down. Verify the API keys in your Render settings." }]);
     } finally {
       setIsProcessing(false);
     }
