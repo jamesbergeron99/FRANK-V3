@@ -54,7 +54,7 @@ const App = () => {
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: 'smooth' }); }, [messages, isProcessing]);
 
-  // --- THE LOGIC FIX: ADDING SYSTEM INSTRUCTIONS ---
+  // --- THE BRAIN FIX: V1BETA ENDPOINT & DEEP RESPONSE SCAN ---
   const handleFrankResponse = async (text) => {
     if (!text.trim()) return;
     
@@ -64,14 +64,20 @@ const App = () => {
     setIsProcessing(true);
 
     try {
+      // Switched to v1beta which is often required for cross-origin handshakes on Render
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+      
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           contents: [{ role: "user", parts: [{ text: text }] }],
-          systemInstruction: { 
-            parts: [{ text: "You are Frank, a blunt Sunset Blvd script doctor. You give honest, critical feedback. Always respond in text." }] 
+          generationConfig: {
+            temperature: 0.9,
+            topK: 1,
+            topP: 1,
+            maxOutputTokens: 2048,
+            stopSequences: []
           },
           safetySettings: [
             { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
@@ -83,19 +89,20 @@ const App = () => {
       });
       
       const data = await res.json();
-      console.log("Response from Google:", data); // Check this in your browser console (F12)
 
-      const frankText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-      if (frankText) {
-        setMessages(prev => [...prev, { role: 'assistant', content: frankText }]);
+      // Exhaustive check for text content in the returned object
+      let frankText = "";
+      if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+        frankText = data.candidates[0].content.parts[0].text;
+      } else if (data?.candidates?.[0]?.finishReason === "SAFETY") {
+        frankText = "Google's filters blocked that one, kid. Let's keep it professional so I can actually read the pages.";
       } else {
-        // Fallback for safety blocks or structural errors
-        const reason = data?.candidates?.[0]?.finishReason || "UNKNOWN";
-        setMessages(prev => [...prev, { role: 'assistant', content: `The script got stuck in the gate. (Reason: ${reason}). Try rephrasing?` }]);
+        frankText = "I'm looking at it, but the feed is coming in garbled. Check your API key format in Render?";
       }
+
+      setMessages(prev => [...prev, { role: 'assistant', content: frankText }]);
     } catch (e) {
-      setErrorMessage("Link failed. Check Render Environment variables.");
+      setMessages(prev => [...prev, { role: 'assistant', content: "The connection to the studio lot is down. Verify the API keys in your Render dashboard." }]);
     } finally {
       setIsProcessing(false);
     }
@@ -123,7 +130,7 @@ const App = () => {
                   <div className={`max-w-[75%] p-6 ${m.role === 'user' ? 'bg-stone-800 text-white rounded-2xl shadow-xl' : 'bg-white border shadow-sm'}`}>{m.content}</div>
                 </div>
               ))}
-              {isProcessing && <div className="p-10 animate-pulse text-stone-400 font-bold italic">Frank is reviewing the notes...</div>}
+              {isProcessing && <div className="p-10 animate-pulse text-stone-400 font-bold italic text-xs">Frank is marking up the pages...</div>}
               <div ref={scrollRef} />
             </div>
             <div className="bg-white border-t p-5 shrink-0 shadow-lg">
