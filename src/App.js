@@ -44,7 +44,6 @@ const App = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState('chat');
   const [errorMessage, setErrorMessage] = useState(null);
-  const [voiceAssignments, setVoiceAssignments] = useState({ Narrator: '' });
 
   const scrollRef = useRef(null);
 
@@ -55,7 +54,7 @@ const App = () => {
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: 'smooth' }); }, [messages, isProcessing]);
 
-  // --- THE BRAIN FIX: OVERRIDING FILTERS & PARSING TEXT ---
+  // --- THE LOGIC FIX: ADDING SYSTEM INSTRUCTIONS ---
   const handleFrankResponse = async (text) => {
     if (!text.trim()) return;
     
@@ -63,7 +62,6 @@ const App = () => {
     setMessages(prev => [...prev, userMsg]);
     setInputText('');
     setIsProcessing(true);
-    setErrorMessage(null);
 
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
@@ -71,8 +69,10 @@ const App = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          contents: [{ parts: [{ text: text }] }],
-          // This tells Gemini not to be too sensitive with script content
+          contents: [{ role: "user", parts: [{ text: text }] }],
+          systemInstruction: { 
+            parts: [{ text: "You are Frank, a blunt Sunset Blvd script doctor. You give honest, critical feedback. Always respond in text." }] 
+          },
           safetySettings: [
             { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
             { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
@@ -83,15 +83,19 @@ const App = () => {
       });
       
       const data = await res.json();
-      
-      // Dig through every potential text path in the response object
-      const frankText = data?.candidates?.[0]?.content?.parts?.[0]?.text || 
-                        data?.candidates?.[0]?.text || 
-                        "The script is coming through, but my internal reader is jammed. Try a shorter snippet?";
+      console.log("Response from Google:", data); // Check this in your browser console (F12)
 
-      setMessages(prev => [...prev, { role: 'assistant', content: frankText }]);
+      const frankText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (frankText) {
+        setMessages(prev => [...prev, { role: 'assistant', content: frankText }]);
+      } else {
+        // Fallback for safety blocks or structural errors
+        const reason = data?.candidates?.[0]?.finishReason || "UNKNOWN";
+        setMessages(prev => [...prev, { role: 'assistant', content: `The script got stuck in the gate. (Reason: ${reason}). Try rephrasing?` }]);
+      }
     } catch (e) {
-      setErrorMessage("Handshake Error: Link to Google brain failed.");
+      setErrorMessage("Link failed. Check Render Environment variables.");
     } finally {
       setIsProcessing(false);
     }
@@ -119,7 +123,7 @@ const App = () => {
                   <div className={`max-w-[75%] p-6 ${m.role === 'user' ? 'bg-stone-800 text-white rounded-2xl shadow-xl' : 'bg-white border shadow-sm'}`}>{m.content}</div>
                 </div>
               ))}
-              {isProcessing && <div className="p-10 animate-pulse text-stone-400 font-bold italic">Frank is weighing the stakes...</div>}
+              {isProcessing && <div className="p-10 animate-pulse text-stone-400 font-bold italic">Frank is reviewing the notes...</div>}
               <div ref={scrollRef} />
             </div>
             <div className="bg-white border-t p-5 shrink-0 shadow-lg">
