@@ -54,7 +54,7 @@ const App = () => {
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: 'smooth' }); }, [messages, isProcessing]);
 
-  // --- THE BRAIN FIX: V1BETA ENDPOINT ---
+  // --- THE BRAIN FIX: GEMINI 2.0 FLASH ---
   const handleFrankResponse = async (text) => {
     if (!text.trim()) return;
     
@@ -64,8 +64,8 @@ const App = () => {
     setIsProcessing(true);
 
     try {
-      // Switched to v1beta explicitly to allow the gemini-1.5-flash model through Render
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+      // Switched to gemini-2.0-flash which has the highest compatibility on v1beta
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
       
       const response = await fetch(url, {
         method: 'POST',
@@ -80,20 +80,19 @@ const App = () => {
       const data = await response.json();
 
       if (data.error) {
-        setMessages(prev => [...prev, { role: 'assistant', content: `The studio lot sent an error: ${data.error.message}` }]);
+        setMessages(prev => [...prev, { role: 'assistant', content: `Studio Lot Error: ${data.error.message}` }]);
         return;
       }
 
-      // Deep scan for the text response
       const frankText = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
       if (frankText) {
         setMessages(prev => [...prev, { role: 'assistant', content: frankText }]);
       } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: "I'm here, kid, but the signal is weak. Rephrase that for me?" }]);
+        setMessages(prev => [...prev, { role: 'assistant', content: "The pages are blank. Rephrase that for me?" }]);
       }
     } catch (e) {
-      setMessages(prev => [...prev, { role: 'assistant', content: "The connection to the studio lot is down. Verify the API keys in your Render settings." }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: "Studio connection lost. Check Render environment variables." }]);
     } finally {
       setIsProcessing(false);
     }
@@ -121,7 +120,7 @@ const App = () => {
                   <div className={`max-w-[75%] p-6 ${m.role === 'user' ? 'bg-stone-800 text-white rounded-2xl shadow-xl' : 'bg-white border shadow-sm'}`}>{m.content}</div>
                 </div>
               ))}
-              {isProcessing && <div className="p-10 animate-pulse text-stone-400 font-bold italic text-xs uppercase tracking-widest">Consulting the script doctor...</div>}
+              {isProcessing && <div className="p-10 animate-pulse text-stone-400 font-bold italic text-xs uppercase tracking-widest text-center">Script Doctor is marking up the draft...</div>}
               <div ref={scrollRef} />
             </div>
             <div className="bg-white border-t p-5 shrink-0 shadow-lg">
