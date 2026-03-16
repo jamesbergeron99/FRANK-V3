@@ -11,7 +11,7 @@ const apiKey = process.env.REACT_APP_GEMINI_API_KEY;
 const INWORLD_API_KEY = process.env.REACT_APP_INWORLD_API_KEY; 
 const VOICE_ID = "default-oglabcjnetcklcq7rghmbw__jimmy"; 
 const MODEL_ID = "inworld-tts-1.5-max";
-const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
 const INWORLD_VOICES = [
   { id: 'default-oglabcjnetcklcq7rghmbw__jimmy', name: 'Jimmy (Default Male)' },
   { id: 'default-oglabcjnetcklcq7rghmbw__alex', name: 'Alex (Male)' },
@@ -39,7 +39,7 @@ const db = getFirestore(app);
 
 const App = () => {
   const [user, setUser] = useState(null);
-  const [messages, setMessages] = useState([{ role: 'assistant', content: "I'm Frank. Let's quit the posturing and see if these pages have a heartbeat. Send me the script when you're ready to get real." }]);
+  const [messages, setMessages] = useState([{ role: 'assistant', content: "I'm Frank. Let's see if these pages have a heartbeat. Send me the script when you're ready." }]);
   const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState('chat');
@@ -48,32 +48,28 @@ const App = () => {
   const scrollRef = useRef(null);
 
   useEffect(() => {
-    signInAnonymously(auth).catch(() => setErrorMessage("Authentication Failed."));
+    signInAnonymously(auth).catch(() => setErrorMessage("Auth Failed."));
     return onAuthStateChanged(auth, setUser);
   }, []);
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: 'smooth' }); }, [messages, isProcessing]);
 
-  // --- THE BRAIN FIX: GEMINI 2.0 FLASH ---
   const handleFrankResponse = async (text) => {
     if (!text.trim()) return;
-    
     const userMsg = { role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
     setInputText('');
     setIsProcessing(true);
 
     try {
-      // Switched to gemini-2.0-flash which has the highest compatibility on v1beta
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+      // Reverting to 1.5 Flash to bypass the 2.0 billing lock
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
       
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{
-            parts: [{ text: text }]
-          }]
+          contents: [{ parts: [{ text: text }] }]
         })
       });
 
@@ -89,10 +85,10 @@ const App = () => {
       if (frankText) {
         setMessages(prev => [...prev, { role: 'assistant', content: frankText }]);
       } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: "The pages are blank. Rephrase that for me?" }]);
+        setMessages(prev => [...prev, { role: 'assistant', content: "The connection is hazy. Rephrase that for me?" }]);
       }
     } catch (e) {
-      setMessages(prev => [...prev, { role: 'assistant', content: "Studio connection lost. Check Render environment variables." }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: "Studio connection lost. Check Render variables." }]);
     } finally {
       setIsProcessing(false);
     }
@@ -120,10 +116,10 @@ const App = () => {
                   <div className={`max-w-[75%] p-6 ${m.role === 'user' ? 'bg-stone-800 text-white rounded-2xl shadow-xl' : 'bg-white border shadow-sm'}`}>{m.content}</div>
                 </div>
               ))}
-              {isProcessing && <div className="p-10 animate-pulse text-stone-400 font-bold italic text-xs uppercase tracking-widest text-center">Script Doctor is marking up the draft...</div>}
+              {isProcessing && <div className="p-10 animate-pulse text-stone-400 font-bold italic text-xs uppercase tracking-widest text-center text-black">Consulting the script doctor...</div>}
               <div ref={scrollRef} />
             </div>
-            <div className="bg-white border-t p-5 shrink-0 shadow-lg">
+            <div className="bg-white border-t p-5 shrink-0 shadow-lg text-black">
               <div className="flex items-center gap-4 max-w-5xl mx-auto w-full">
                 <input value={inputText} onChange={e => setInputText(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleFrankResponse(inputText)} placeholder="Defend your arc..." className="flex-1 px-6 py-4 bg-stone-50 rounded-xl outline-none" />
                 <button onClick={() => handleFrankResponse(inputText)} className="w-12 h-12 bg-stone-800 text-white rounded-full flex items-center justify-center shadow-md"><Send size={18} /></button>
