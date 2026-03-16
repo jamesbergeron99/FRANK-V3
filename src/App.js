@@ -3,7 +3,7 @@ import {
   Send, Mic, MicOff, Pause, Play, RotateCcw, Loader2, AlertCircle, FileUp, ClipboardList, MessageSquare, Trash2, CheckCircle2, Zap, ZapOff, BookOpen, Download, Volume2, Image as ImageIcon, Sparkles, Stethoscope, ChevronRight, Activity, Scissors, XCircle, Zap as ZapIcon, Users, SkipBack, SkipForward, StopCircle, PlayCircle, Volume1 
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 
 // --- CONFIGURATION ---
@@ -12,7 +12,6 @@ const INWORLD_API_KEY = process.env.REACT_APP_INWORLD_API_KEY;
 const VOICE_ID = "default-oglabcjnetcklcq7rghmbw__jimmy"; 
 const MODEL_ID = "inworld-tts-1.5-max";
 
-// STRICTLY CONFIRMED VOICE LIST
 const INWORLD_VOICES = [
   { id: 'default-oglabcjnetcklcq7rghmbw__jimmy', name: 'Jimmy (Default Male)' },
   { id: 'default-oglabcjnetcklcq7rghmbw__alex', name: 'Alex (Male)' },
@@ -33,79 +32,29 @@ const INWORLD_VOICES = [
   { id: 'default-oglabcjnetcklcq7rghmbw__pixie', name: 'Pixie (Child)' }
 ];
 
-const DEMO_SCRIPT = `INT. SUNSET BLVD EXECUTIVE OFFICE - DAY\n\nFrank sits behind a massive mahogany desk. He's smoking a cigar that costs more than a car.\n\nFRANK\nI told you, kid. The third act needs explosions.\n\nWRITER\n(nervously)\nBut it's a quiet drama about a family grieving...\n\nFRANK\n(laughing)\nGrieving? I'll give them something to grieve about when the box office numbers come in. Add the explosions.`;
+const DEMO_SCRIPT = `INT. SUNSET BLVD EXECUTIVE OFFICE - DAY\n\nFrank sits behind a massive mahogany desk. He's smoking a cigar.`;
 
-// Firebase Configuration
 const firebaseConfig = { apiKey: "mock", authDomain: "mock", projectId: "mock", storageBucket: "mock", messagingSenderId: "000", appId: "000" };
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = 'frank-exec-series-v14';
-
-const fetchWithRetry = async (url, options) => {
-  const delays = [1000, 2000, 4000];
-  for (let i = 0; i < delays.length; i++) {
-    try {
-      const res = await fetch(url, options);
-      if (res.ok) return res;
-    } catch (e) {}
-    await new Promise(r => setTimeout(r, delays[i]));
-  }
-};
-
-const extractTextFromPDF = async (file) => {
-  if (!window.pdfjsLib) {
-    await new Promise((resolve) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
-      script.onload = () => {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-        resolve();
-      };
-      document.head.appendChild(script);
-    });
-  }
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  let fullText = "";
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    fullText += content.items.map(item => item.str).join(" ") + "\n";
-  }
-  return fullText;
-};
 
 const App = () => {
   const [user, setUser] = useState(null);
   const [messages, setMessages] = useState([{ role: 'assistant', content: "I'm Frank. Let's quit the posturing and see if these pages have a heartbeat. Send me the script when you're ready to get real." }]);
   const [inputText, setInputText] = useState('');
-  const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [activeTab, setActiveTab] = useState('chat');
   const [errorMessage, setErrorMessage] = useState(null);
   const [scriptData, setScriptData] = useState(null);
-  const [deepDiveData, setDeepDiveData] = useState(null);
   const [lastScriptContent, setLastScriptContent] = useState("");
-  const [posterUrl, setPosterUrl] = useState(null);
   const [parsedLines, setParsedLines] = useState([]);
   const [cast, setCast] = useState([]);
-  const [voiceAssignments, setVoiceAssignments] = useState({ Narrator: '' }); 
-  const [readState, setReadState] = useState('stopped'); 
+  const [voiceAssignments, setVoiceAssignments] = useState({ Narrator: '' });
+  const [readState, setReadState] = useState('stopped');
   const [currentLineIndex, setCurrentLineIndex] = useState(0);
 
   const scrollRef = useRef(null);
-  const audioContextRef = useRef(null);
-  const sourceNodeRef = useRef(null);
-  const activeLineRef = useRef(null);
-  const voiceAssignmentsRef = useRef({});
-  const readStateRef = useRef('stopped');
-  const parsedLinesRef = useRef([]);
-
-  useEffect(() => { voiceAssignmentsRef.current = voiceAssignments; }, [voiceAssignments]);
-  useEffect(() => { readStateRef.current = readState; }, [readState]);
-  useEffect(() => { parsedLinesRef.current = parsedLines; }, [parsedLines]);
 
   useEffect(() => {
     signInAnonymously(auth).catch(() => setErrorMessage("Authentication Failed."));
@@ -114,87 +63,36 @@ const App = () => {
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: 'smooth' }); }, [messages, isProcessing]);
 
-  // PARSER LOGIC
-  useEffect(() => {
-    const text = lastScriptContent || DEMO_SCRIPT;
-    const lines = text.split('\n');
-    const parsed = []; const characters = new Set();
-    lines.forEach((line, idx) => {
-      const trimmed = line.trim();
-      if (!trimmed) return;
-      if (trimmed === trimmed.toUpperCase() && trimmed.length > 1 && !trimmed.includes('.')) {
-        characters.add(trimmed);
-        parsed.push({ id: idx, type: 'character', text: trimmed });
-      } else {
-        parsed.push({ id: idx, type: 'dialogue', text: trimmed });
-      }
-    });
-    setParsedLines(parsed); setCast(Array.from(characters));
-  }, [lastScriptContent]);
-
-  const fetchAudioChunk = async (text, customVoiceId) => {
-    const vId = customVoiceId || VOICE_ID;
-    try {
-      const authHeader = INWORLD_API_KEY.startsWith('Basic ') ? INWORLD_API_KEY : `Basic ${INWORLD_API_KEY}`;
-      const response = await fetch('https://api.inworld.ai/tts/v1/voice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
-        body: JSON.stringify({ text, voiceId: vId, modelId: MODEL_ID })
-      });
-      const json = await response.json();
-      const base64 = json.audioContent || json.result?.audioContent;
-      if (base64) {
-        const binary = window.atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        return bytes.buffer;
-      }
-    } catch (e) { console.error(e); }
-  };
-
-  // --- FIXED HANDSHAKE LOGIC ---
+  // --- RESTORED TEXT ENTRY & RESPONSE LOGIC ---
   const handleFrankResponse = async (text) => {
-    if (!text) return;
+    if (!text.trim()) return;
+    
+    // 1. Force the user text into the chat UI immediately
+    const userMessage = { role: 'user', content: text };
+    setMessages(prev => [...prev, userMessage]);
+    setInputText('');
     setIsProcessing(true);
+
     try {
-      // Switched to a more stable direct URL format for Render
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          contents: [{ 
-            parts: [{ text: text }] 
-          }] 
-        })
+        body: JSON.stringify({ contents: [{ parts: [{ text: text }] }] })
       });
       
       const data = await res.json();
-      // Added safer extraction of the text string from the Google Brain
       const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
       
       if (responseText) {
-        setMessages(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: responseText }]);
-        // If it's a script analysis, update the report card
-        if (text.includes("[Script Uploaded]")) {
-          setScriptData({ content: responseText });
-        }
-      } else {
-        throw new Error("Empty response");
+        // 2. Push the brain's response into the UI
+        setMessages(prev => [...prev, { role: 'assistant', content: responseText }]);
       }
-    } catch (e) { 
-      setErrorMessage("Analysis Link Stalled. Double-check your API key names in Render."); 
-    } finally { 
-      setIsProcessing(false); 
+    } catch (e) {
+      setErrorMessage("Connection stalled. Check Render environment keys.");
+    } finally {
+      setIsProcessing(false);
     }
-  };
-
-  const handleScriptUpload = async (file) => {
-    if (!file) return;
-    setIsProcessing(true);
-    const text = file.type === 'application/pdf' ? await extractTextFromPDF(file) : await file.text();
-    setLastScriptContent(text);
-    handleFrankResponse(`[Script Uploaded] Analyze this: ${text.slice(0, 5000)}`);
   };
 
   return (
@@ -227,46 +125,9 @@ const App = () => {
               <div className="flex items-center gap-4 max-w-5xl mx-auto w-full">
                 <input value={inputText} onChange={e => setInputText(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleFrankResponse(inputText)} placeholder="Defend your arc..." className="flex-1 px-6 py-4 bg-stone-50 rounded-xl outline-none" />
                 <button onClick={() => handleFrankResponse(inputText)} className="w-12 h-12 bg-stone-800 text-white rounded-full flex items-center justify-center shadow-md"><Send size={18} /></button>
-                <label className="w-12 h-12 bg-stone-50 rounded-full flex items-center justify-center cursor-pointer hover:bg-stone-100 transition-colors"><FileUp size={20}/><input type="file" className="hidden" accept=".pdf" onChange={(e) => handleScriptUpload(e.target.files[0])} /></label>
               </div>
             </div>
           </>
-        )}
-
-        {activeTab === 'read-through' && (
-          <div className="flex-1 flex flex-col bg-white">
-            <div className="bg-stone-900 text-white p-3 flex items-center justify-between px-8">
-               <div className="flex items-center gap-3">
-                  <button className="px-8 py-2 bg-white text-black rounded-full font-black uppercase text-xs tracking-widest">PLAY READ-THROUGH</button>
-                  <button className="p-2 bg-stone-800 rounded-full text-red-400 shadow-sm"><StopCircle size={16} /></button>
-               </div>
-            </div>
-            <div className="flex-1 flex overflow-hidden">
-               <div className="w-1/2 bg-[#faf9f6] border-r p-10 overflow-y-auto">
-                  <h2 className="text-2xl font-black uppercase mb-8 flex items-center gap-3"><Users size={24}/> Voice Casting</h2>
-                  <div className="space-y-4">
-                     {['Narrator', ...cast].map(char => (
-                        <div key={char} className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm">
-                           <div className="font-bold text-xs uppercase tracking-widest mb-3">{char}</div>
-                           <select value={voiceAssignments[char] || ''} onChange={e => setVoiceAssignments(v => ({...v, [char]: e.target.value}))} className="w-full bg-stone-50 border rounded-lg p-2.5 text-xs outline-none">
-                              <option value="">Jimmy (Default)</option>
-                              {INWORLD_VOICES.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                           </select>
-                        </div>
-                     ))}
-                  </div>
-               </div>
-               <div className="w-1/2 overflow-y-auto p-16 font-serif text-lg leading-relaxed text-stone-400">
-                  Upload a script to begin table read formatting.
-               </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'executive-report' && (
-          <div className="p-20 overflow-y-auto bg-white max-w-4xl mx-auto font-serif text-lg leading-relaxed">
-            {scriptData ? scriptData.content : "No analysis report generated yet. Send Frank a script in the Lounge."}
-          </div>
         )}
       </main>
     </div>
