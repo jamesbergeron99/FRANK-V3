@@ -11,7 +11,7 @@ const apiKey = process.env.REACT_APP_GEMINI_API_KEY;
 const INWORLD_API_KEY = process.env.REACT_APP_INWORLD_API_KEY; 
 const VOICE_ID = "default-oglabcjnetcklcq7rghmbw__jimmy"; 
 const MODEL_ID = "inworld-tts-1.5-max";
-
+const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 const INWORLD_VOICES = [
   { id: 'default-oglabcjnetcklcq7rghmbw__jimmy', name: 'Jimmy (Default Male)' },
   { id: 'default-oglabcjnetcklcq7rghmbw__alex', name: 'Alex (Male)' },
