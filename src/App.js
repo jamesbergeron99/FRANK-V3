@@ -38,7 +38,6 @@ import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 
 // --- CONFIGURATION ---
 const apiKey = process.env.REACT_APP_GEMINI_API_KEY; 
-
 const INWORLD_API_KEY = process.env.REACT_APP_INWORLD_API_KEY; 
 const VOICE_ID = "default-oglabcjnetcklcq7rghmbw__jimmy"; 
 const MODEL_ID = "inworld-tts-1.5-max";
@@ -173,7 +172,6 @@ const App = () => {
   const [isDeepDiving, setIsDeepDiving] = useState(false);
   const [lastScriptContent, setLastScriptContent] = useState("");
   const [posterUrl, setPosterUrl] = useState(null);
-  const [isGeneratingPoster, setIsGeneratingPoster] = useState(false);
 
   const [parsedLines, setParsedLines] = useState([]);
   const [cast, setCast] = useState([]);
@@ -186,7 +184,6 @@ const App = () => {
   const scrollRef = useRef(null);
   const speechQueue = useRef([]);
   const audioBufferQueue = useRef([]); 
-  const playedQueue = useRef([]); 
   const isCurrentlyPlaying = useRef(false);
   const isFetchingNext = useRef(false);
   const recognitionRef = useRef(null);
@@ -399,7 +396,6 @@ const App = () => {
          }
       }
     } catch (e) {}
-    // Fallback to Gemini TTS
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
     const res = await fetchWithRetry(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text }] }], generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } } } } } }) });
     const data = await res.json(); const b64 = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
@@ -424,7 +420,7 @@ const App = () => {
       await fillAudioBuffer(); if (audioBufferQueue.current.length === 0) { setTimeout(processAudioQueue, 150); return; }
     }
     isCurrentlyPlaying.current = true; setIsSpeaking(true);
-    const item = audioBufferQueue.current.shift(); playedQueue.current.push(item);
+    const item = audioBufferQueue.current.shift();
     const ctx = ensureAudioContext();
     try {
       const decoded = await ctx.decodeAudioData(item.buffer.slice(0)); const source = ctx.createBufferSource();
@@ -447,14 +443,14 @@ const App = () => {
 
   const stopSpeech = () => {
     if (speechTimeoutRef.current) clearTimeout(speechTimeoutRef.current);
-    speechQueue.current = []; audioBufferQueue.current = []; playedQueue.current = [];
+    speechQueue.current = []; audioBufferQueue.current = [];
     if (sourceNodeRef.current) { sourceNodeRef.current.onended = null; try { sourceNodeRef.current.stop(); } catch (e) {} }
     isCurrentlyPlaying.current = false; setIsSpeaking(false); setIsPaused(false);
   };
 
   const handleFrankResponse = async (textToProcess, isDeepDive = false) => {
     if (!textToProcess && !isDeepDive) return;
-    stopSpeech(); setIsProcessing(true); if (isDeepDive) { setIsDeepDiving(true); setActiveTab('deep-dive'); }
+    stopSpeech(); setIsProcessing(true); if (isDeepDive) { setActiveTab('deep-dive'); }
     setErrorMessage(null); setInputText('');
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
