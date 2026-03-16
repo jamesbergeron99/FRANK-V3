@@ -44,6 +44,7 @@ const App = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState('chat');
   const [errorMessage, setErrorMessage] = useState(null);
+  const [voiceAssignments, setVoiceAssignments] = useState({ Narrator: '' });
 
   const scrollRef = useRef(null);
 
@@ -54,6 +55,7 @@ const App = () => {
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: 'smooth' }); }, [messages, isProcessing]);
 
+  // --- THE BRAIN FIX: OVERRIDING FILTERS & PARSING TEXT ---
   const handleFrankResponse = async (text) => {
     if (!text.trim()) return;
     
@@ -68,21 +70,26 @@ const App = () => {
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: text }] }] })
+        body: JSON.stringify({ 
+          contents: [{ parts: [{ text: text }] }],
+          // This tells Gemini not to be too sensitive with script content
+          safetySettings: [
+            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+          ]
+        })
       });
       
       const data = await res.json();
       
-      // DEEP NAVIGATOR: Looks specifically for candidates[0].content.parts[0].text
-      const frankText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      // Dig through every potential text path in the response object
+      const frankText = data?.candidates?.[0]?.content?.parts?.[0]?.text || 
+                        data?.candidates?.[0]?.text || 
+                        "The script is coming through, but my internal reader is jammed. Try a shorter snippet?";
 
-      if (frankText) {
-        setMessages(prev => [...prev, { role: 'assistant', content: frankText }]);
-      } else {
-        // Log error if text field is missing but data arrived
-        console.error("Payload received but text missing:", data);
-        setMessages(prev => [...prev, { role: 'assistant', content: "I heard you, but the script was unreadable on my end. Say that again?" }]);
-      }
+      setMessages(prev => [...prev, { role: 'assistant', content: frankText }]);
     } catch (e) {
       setErrorMessage("Handshake Error: Link to Google brain failed.");
     } finally {
@@ -112,7 +119,7 @@ const App = () => {
                   <div className={`max-w-[75%] p-6 ${m.role === 'user' ? 'bg-stone-800 text-white rounded-2xl shadow-xl' : 'bg-white border shadow-sm'}`}>{m.content}</div>
                 </div>
               ))}
-              {isProcessing && <div className="p-10 animate-pulse text-stone-400 font-bold">Frank is considering...</div>}
+              {isProcessing && <div className="p-10 animate-pulse text-stone-400 font-bold italic">Frank is weighing the stakes...</div>}
               <div ref={scrollRef} />
             </div>
             <div className="bg-white border-t p-5 shrink-0 shadow-lg">
