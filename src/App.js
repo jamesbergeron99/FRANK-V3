@@ -32,8 +32,6 @@ const INWORLD_VOICES = [
   { id: 'default-oglabcjnetcklcq7rghmbw__pixie', name: 'Pixie (Child)' }
 ];
 
-const DEMO_SCRIPT = `INT. SUNSET BLVD EXECUTIVE OFFICE - DAY\n\nFrank sits behind a massive mahogany desk. He's smoking a cigar.`;
-
 const firebaseConfig = { apiKey: "mock", authDomain: "mock", projectId: "mock", storageBucket: "mock", messagingSenderId: "000", appId: "000" };
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -63,13 +61,12 @@ const App = () => {
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: 'smooth' }); }, [messages, isProcessing]);
 
-  // --- RESTORED TEXT ENTRY & RESPONSE LOGIC ---
+  // --- THE CRITICAL RESPONSE FIX ---
   const handleFrankResponse = async (text) => {
     if (!text.trim()) return;
     
-    // 1. Force the user text into the chat UI immediately
-    const userMessage = { role: 'user', content: text };
-    setMessages(prev => [...prev, userMessage]);
+    const userMsg = { role: 'user', content: text };
+    setMessages(prev => [...prev, userMsg]);
     setInputText('');
     setIsProcessing(true);
 
@@ -82,14 +79,22 @@ const App = () => {
       });
       
       const data = await res.json();
-      const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
       
-      if (responseText) {
-        // 2. Push the brain's response into the UI
-        setMessages(prev => [...prev, { role: 'assistant', content: responseText }]);
+      // Multi-layer extraction to ensure we get the text
+      let frankText = "";
+      if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts) {
+        frankText = data.candidates[0].content.parts[0].text;
+      } else if (data.result) {
+        frankText = data.result;
+      }
+
+      if (frankText) {
+        setMessages(prev => [...prev, { role: 'assistant', content: frankText }]);
+      } else {
+        setMessages(prev => [...prev, { role: 'assistant', content: "I'm here, but the connection cut out. Try again." }]);
       }
     } catch (e) {
-      setErrorMessage("Connection stalled. Check Render environment keys.");
+      setErrorMessage("The Google Brain is silent. Verify your Render Keys.");
     } finally {
       setIsProcessing(false);
     }
