@@ -44,11 +44,6 @@ const App = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState('chat');
   const [errorMessage, setErrorMessage] = useState(null);
-  const [lastScriptContent, setLastScriptContent] = useState("");
-  const [cast, setCast] = useState([]);
-  const [voiceAssignments, setVoiceAssignments] = useState({ Narrator: '' });
-  const [readState, setReadState] = useState('stopped');
-  const [currentLineIndex, setCurrentLineIndex] = useState(0);
 
   const scrollRef = useRef(null);
 
@@ -77,28 +72,19 @@ const App = () => {
       });
       
       const data = await res.json();
-      console.log("Raw Brain Data:", data); // Helpful for checking Render logs
-
-      // --- AGGRESSIVE CATCH-ALL PARSER ---
-      let frankText = "";
       
-      if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-        frankText = data.candidates[0].content.parts[0].text;
-      } else if (data.candidates?.[0]?.text) {
-        frankText = data.candidates[0].text;
-      } else if (data.text) {
-        frankText = data.text;
-      } else if (data.result) {
-        frankText = typeof data.result === 'string' ? data.result : JSON.stringify(data.result);
-      }
+      // DEEP NAVIGATOR: Looks specifically for candidates[0].content.parts[0].text
+      const frankText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
-      if (frankText && frankText.length > 0) {
+      if (frankText) {
         setMessages(prev => [...prev, { role: 'assistant', content: frankText }]);
       } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: "I'm reading you, but my response got jammed in the terminal. Try asking again." }]);
+        // Log error if text field is missing but data arrived
+        console.error("Payload received but text missing:", data);
+        setMessages(prev => [...prev, { role: 'assistant', content: "I heard you, but the script was unreadable on my end. Say that again?" }]);
       }
     } catch (e) {
-      setErrorMessage("The link to Google is broken. Check your Render API Key.");
+      setErrorMessage("Handshake Error: Link to Google brain failed.");
     } finally {
       setIsProcessing(false);
     }
