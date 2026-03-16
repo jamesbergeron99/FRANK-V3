@@ -44,9 +44,7 @@ const App = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState('chat');
   const [errorMessage, setErrorMessage] = useState(null);
-  const [scriptData, setScriptData] = useState(null);
   const [lastScriptContent, setLastScriptContent] = useState("");
-  const [parsedLines, setParsedLines] = useState([]);
   const [cast, setCast] = useState([]);
   const [voiceAssignments, setVoiceAssignments] = useState({ Narrator: '' });
   const [readState, setReadState] = useState('stopped');
@@ -61,7 +59,6 @@ const App = () => {
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: 'smooth' }); }, [messages, isProcessing]);
 
-  // --- THE CRITICAL RESPONSE FIX ---
   const handleFrankResponse = async (text) => {
     if (!text.trim()) return;
     
@@ -69,6 +66,7 @@ const App = () => {
     setMessages(prev => [...prev, userMsg]);
     setInputText('');
     setIsProcessing(true);
+    setErrorMessage(null);
 
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
@@ -79,22 +77,28 @@ const App = () => {
       });
       
       const data = await res.json();
-      
-      // Multi-layer extraction to ensure we get the text
+      console.log("Raw Brain Data:", data); // Helpful for checking Render logs
+
+      // --- AGGRESSIVE CATCH-ALL PARSER ---
       let frankText = "";
-      if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts) {
+      
+      if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
         frankText = data.candidates[0].content.parts[0].text;
+      } else if (data.candidates?.[0]?.text) {
+        frankText = data.candidates[0].text;
+      } else if (data.text) {
+        frankText = data.text;
       } else if (data.result) {
-        frankText = data.result;
+        frankText = typeof data.result === 'string' ? data.result : JSON.stringify(data.result);
       }
 
-      if (frankText) {
+      if (frankText && frankText.length > 0) {
         setMessages(prev => [...prev, { role: 'assistant', content: frankText }]);
       } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: "I'm here, but the connection cut out. Try again." }]);
+        setMessages(prev => [...prev, { role: 'assistant', content: "I'm reading you, but my response got jammed in the terminal. Try asking again." }]);
       }
     } catch (e) {
-      setErrorMessage("The Google Brain is silent. Verify your Render Keys.");
+      setErrorMessage("The link to Google is broken. Check your Render API Key.");
     } finally {
       setIsProcessing(false);
     }
@@ -109,7 +113,6 @@ const App = () => {
         </div>
         <div className="flex items-center gap-6 text-[10px] font-bold tracking-widest text-stone-400 uppercase">
           <button onClick={() => setActiveTab('chat')} className={activeTab === 'chat' ? 'border-b-2 border-black text-black' : ''}>LOUNGE</button>
-          <button onClick={() => setActiveTab('executive-report')} className={activeTab === 'executive-report' ? 'border-b-2 border-black text-black' : ''}>REPORT CARD</button>
           <button onClick={() => setActiveTab('read-through')} className={activeTab === 'read-through' ? 'border-b-2 border-black text-black' : ''}>READ-THROUGH</button>
         </div>
       </header>
